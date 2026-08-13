@@ -316,14 +316,34 @@ test('the orchestrator prompt carries routing, not methodology', () => {
     'utf8'
   );
 
-  // Every skill it names must exist, or it routes into a void.
-  const named = [...prompt.matchAll(/`([a-z][a-z-]+)`/g)].map((m) => m[1]);
-  const skills = new Set(fs.readdirSync(path.join(packageRoot, 'skills')));
-  for (const candidate of named) {
-    if (!skills.has(candidate)) continue;
-    assert.ok(skills.has(candidate), `names a nonexistent skill: ${candidate}`);
+  // The routing table is only worth anything if every skill it names resolves.
+  // Checked against an explicit list rather than by scanning backticked words:
+  // scanning and skipping non-matches makes the assertion tautological, so a
+  // renamed or deleted skill would slip through.
+  const ROUTED_SKILLS = [
+    'brainstorming',
+    'writing-plans',
+    'subagent-driven-development',
+    'using-git-worktrees',
+    'systematic-debugging',
+    'verification-before-completion',
+    'finishing-a-development-branch',
+  ];
+
+  for (const skill of ROUTED_SKILLS) {
+    // The skill exists...
+    assert.ok(
+      fs.existsSync(path.join(packageRoot, 'skills', skill, 'SKILL.md')),
+      `orchestrator.md routes to "${skill}", which has no skills/${skill}/SKILL.md`
+    );
+    // ...and the prompt still routes to it.
+    assert.ok(
+      prompt.includes(`\`${skill}\``),
+      `orchestrator.md no longer routes to "${skill}"`
+    );
   }
-  assert.ok(named.some((n) => skills.has(n)), 'the prompt should route to at least one real skill');
+
+  const skills = new Set(fs.readdirSync(path.join(packageRoot, 'skills')));
 
   // The anti-duplication net: the prompt must not restate skill bodies.
   const shingles = (text) => {
@@ -420,9 +440,10 @@ test('an unconfigured council explains itself instead of dispatching', () => {
 
 test('commands register without clobbering existing ones', () => {
   const config = { command: { preset: { template: 'MINE' } } };
-  registerCommands(config);
+  registerCommands(config, loadConfig({ env: {} }));
   assert.equal(config.command.preset.template, 'MINE', "the user's command was replaced");
-  assert.ok(config.command.council, 'other commands should still register');
+  // /board is on by default; /council is not, so it is gated out here.
+  assert.ok(config.command.board, 'other enabled commands should still register');
   assert.equal(Object.keys(COMMANDS).length, 3);
 });
 
@@ -466,4 +487,131 @@ test('/board reports an empty board rather than nothing', () => {
 
 test('an unknown command is left alone', () => {
   assert.equal(expandCommand('something-else', '', { settings: loadConfig({ env: {} }) }), null);
+});
+
+// ------------------------------------------- hardening (PR #1 review)
+
+test('a config file that is valid JSON can never crash the plugin', () => {
+  // loadConfig runs at plugin construction, BEFORE any hook is wrapped in
+  // guardHook, so a throw here is not caught by anything and the plugin
+  // registers nothing at all. deepMerge faithfully carries a null section
+  // through, so every section has to be re-checked before it is dereferenced.
+  const shapes = [
+    '{"council": null}',
+    '{"agents": null}',
+    '{"board": null}',
+    '{"bootstrap": null}',
+    '{"agents": {"models": null}}',
+    '{"agents": {"temperature": null}}',
+    '{"agents": {"disable": "oracle"}}',
+    '{"council": {"members": 5}}',
+    'null',
+    '[]',
+    '42',
+    '"a string"',
+  ];
+
+  withTempDir((dir) => {
+    for (const shape of shapes) {
+      fs.writeFileSync(path.join(dir, 'superagent.json'), shape);
+      const settings = loadConfig({ configDir: dir, env: {} });
+      assert.equal(settings.agents.enabled, true, `${shape}: lost agents section`);
+      assert.ok(Array.isArray(settings.council.members), `${shape}: members not an array`);
+      assert.ok(Array.isArray(settings.agents.disable), `${shape}: disable not an array`);
+      assert.equal(settings.preset, 'team', `${shape}: lost the preset`);
+    }
+  });
+});
+
+test('the roster still registers from a config with null sections', () => {
+  resetPromptCache();
+  withTempDir((dir) => {
+    fs.writeFileSync(path.join(dir, 'superagent.json'), '{"agents": null, "council": null}');
+    const config = {};
+    assert.equal(registerAgents(config, loadConfig({ configDir: dir, env: {} })).length, ROSTER.length);
+  });
+});
+
+test('council honours a configured minParticipants above the floor', () => {
+  const three = [
+    { name: 'a', model: 'p/a' },
+    { name: 'b', model: 'p/b' },
+    { name: 'c', model: 'p/c' },
+  ];
+  assert.equal(usableMembers({ enabled: true, members: three, minParticipants: 3 }).length, 3);
+  // Two members no longer suffice when the user asked for three.
+  assert.deepEqual(usableMembers({ enabled: true, members: three.slice(0, 2), minParticipants: 3 }), []);
+  // But the floor still applies: a "council" of one is a single opinion.
+  assert.deepEqual(usableMembers({ enabled: true, members: [three[0]], minParticipants: 1 }), []);
+  // A nonsense value falls back to the floor rather than disabling the council.
+  assert.equal(usableMembers({ enabled: true, members: three, minParticipants: 'lots' }).length, 3);
+});
+
+test('feature commands are not offered when their feature is off', () => {
+  const config = {};
+  registerCommands(config, loadConfig({ env: { SUPERAGENT_PRESET: 'solo' } }));
+  // /preset is how you turn the layer back on, so it must survive.
+  assert.ok(config.command.preset, '/preset should always be available');
+  assert.ok(!config.command.board, '/board expands to nothing when the board is off');
+  assert.ok(!config.command.council, '/council expands to nothing when the council is off');
+});
+
+test('/preset --persist creates the config directory if it is missing', () => {
+  withTempDir((parent) => {
+    // First run: OpenCode may not have created its config directory yet.
+    const configDir = path.join(parent, 'never-created');
+    const text = expandCommand('preset', 'solo --persist', {
+      settings: loadConfig({ env: {} }),
+      configDir,
+    });
+    assert.match(text, /saved/, 'the persist request was silently lost');
+    assert.equal(loadConfig({ configDir, env: {} }).preset, 'solo');
+  });
+});
+
+test('a deeply indented prompt body survives extraction', () => {
+  // The real templates indent the prompt body 4 spaces and wrap `model:` at 9,
+  // which is why the continuation-skipping heuristic never ate prompt content.
+  // That is a formatting coincidence, so this pins the intended behaviour: a
+  // template that indents its body past the skip threshold still extracts.
+  const template = [
+    '# Some Prompt Template',
+    '',
+    '```',
+    'Subagent (general-purpose):',
+    '  description: "Do a thing"',
+    '  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted',
+    '         model silently inherits the session\'s most expensive one]',
+    '  prompt: |',
+    '        You are a deeply indented specialist.',
+    '',
+    '        ## Your Job',
+    '',
+    '        Do the thing described in [BRIEF_FILE].',
+    '```',
+  ].join('\n');
+
+  const extracted = extractDispatchTemplate(template, 'deep-indent');
+  assert.match(extracted, /^You are a deeply indented specialist\./);
+  assert.match(extracted, /Do the thing described in \[BRIEF_FILE\]/);
+  assert.ok(!extracted.includes('[MODEL'), 'the model placeholder should still be dropped');
+  assert.ok(!extracted.includes('description:'), 'the description key should still be dropped');
+});
+
+test('every template-backed roster entry registers with a real prompt', () => {
+  // The failure this guards against is silent: agents.js skips an agent whose
+  // prompt could not be extracted, so a broken extractor shows up as a missing
+  // specialist rather than an error.
+  resetPromptCache();
+  const config = {};
+  registerAgents(config, loadConfig({ env: {} }));
+
+  for (const entry of ROSTER.filter((e) => e.prompt.kind === 'template')) {
+    const agent = config.agent[entry.key];
+    assert.ok(agent, `${entry.key} was not registered`);
+    assert.ok(
+      agent.prompt.split('\n').length > 30,
+      `${entry.key}: prompt is ${agent.prompt.split('\n').length} lines, expected the full role body`
+    );
+  }
 });

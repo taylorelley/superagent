@@ -107,12 +107,23 @@ const VALID = {
   'board.enforceOwnership': ['warn', 'off'],
 };
 
-/** Read a JSON/JSONC file, returning null when absent and warning when broken. */
+/**
+ * Read a JSON/JSONC file, returning null when absent and warning when broken.
+ *
+ * A root that parses but is not an object — `null`, an array, a bare number —
+ * is rejected here rather than merged, since merging it would replace the whole
+ * configuration with something that has no sections at all.
+ */
 export const readConfigFile = (filePath) => {
   for (const candidate of [filePath, `${filePath}c`]) {
     if (!fs.existsSync(candidate)) continue;
     try {
-      return JSON.parse(stripJsonc(fs.readFileSync(candidate, 'utf8')));
+      const parsed = JSON.parse(stripJsonc(fs.readFileSync(candidate, 'utf8')));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        warn(`ignoring ${candidate}: expected a JSON object at the top level`);
+        return null;
+      }
+      return parsed;
     } catch (err) {
       warn(`ignoring ${candidate}: ${err.message}`);
       return null;
@@ -132,18 +143,41 @@ export const envOverrides = (env = process.env) => {
   return out;
 };
 
-/** Clamp values that would otherwise fail obscurely later. */
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * Clamp values that would otherwise fail obscurely later.
+ *
+ * The section restoration is load-bearing, not defensive noise. `deepMerge`
+ * faithfully carries a `"council": null` from a user's file, and this function
+ * then used to dereference it — a `TypeError` thrown from `loadConfig`, which
+ * runs at plugin construction *before* any hook is wrapped in `guardHook`, so
+ * nothing catches it and the plugin never registers anything. A config file
+ * that is valid JSON must never be able to do that.
+ */
 const validate = (config) => {
+  for (const section of ['agents', 'council', 'board', 'bootstrap']) {
+    if (!isObject(config[section])) {
+      if (config[section] !== undefined) {
+        warn(`${section}: expected an object, ignoring and using defaults`);
+      }
+      config[section] = { ...DEFAULTS[section] };
+    }
+  }
+
   for (const [dotted, allowed] of Object.entries(VALID)) {
     const [group, key] = dotted.split('.');
-    const value = config[group]?.[key];
+    const value = config[group][key];
     if (value !== undefined && !allowed.includes(value)) {
       warn(`${dotted}: "${value}" is not one of ${allowed.join(', ')}; using "${allowed[0]}"`);
       config[group][key] = allowed[0];
     }
   }
-  if (!Array.isArray(config.council?.members)) config.council.members = [];
-  if (!Array.isArray(config.agents?.disable)) config.agents.disable = [];
+
+  if (!Array.isArray(config.council.members)) config.council.members = [];
+  if (!Array.isArray(config.agents.disable)) config.agents.disable = [];
+  if (!isObject(config.agents.models)) config.agents.models = { ...DEFAULTS.agents.models };
+  if (!isObject(config.agents.temperature)) config.agents.temperature = { ...DEFAULTS.agents.temperature };
   return config;
 };
 
@@ -188,7 +222,10 @@ export const loadConfig = ({ configDir, projectDir, env = process.env } = {}) =>
     .filter(Boolean)
     .reduce((acc, layer) => deepMerge(acc, layer), DEFAULTS);
 
-  resolved.preset = preset.known ? preset.name : DEFAULT_PRESET;
-  debug('resolved config', JSON.stringify({ preset: resolved.preset, agents: resolved.agents.enabled }));
-  return validate(resolved);
+  // Validate before touching anything on `resolved`: a section restored here is
+  // one that would otherwise be dereferenced while still null.
+  const settings = validate(resolved);
+  settings.preset = preset.known ? preset.name : DEFAULT_PRESET;
+  debug('resolved config', JSON.stringify({ preset: settings.preset, agents: settings.agents.enabled }));
+  return settings;
 };

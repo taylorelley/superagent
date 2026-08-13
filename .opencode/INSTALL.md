@@ -118,6 +118,16 @@ Use OpenCode's native `skill` tool to list and load skills.
 
 ## Superagent (this fork)
 
+> **Superagent is not in upstream Superpowers.** The install commands earlier in
+> this document install `obra/superpowers`, which does not contain this layer.
+> To get Superagent, install this fork instead:
+>
+> ```json
+> {
+>   "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git#claude/opencode-plugin-integration-5vccnv"]
+> }
+> ```
+
 This fork registers a roster of specialist agents on OpenCode — an orchestrator
 that delegates, implementers, reviewers, an oracle, a librarian — each routable
 to its own model. It is on by default.

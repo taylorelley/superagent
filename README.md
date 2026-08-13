@@ -229,8 +229,10 @@ already use it in another harness.
   ```
 
 - Detailed docs: [docs/README.opencode.md](docs/README.opencode.md)
-- This fork also registers a specialist agent roster on OpenCode:
-  [docs/superagent.md](docs/superagent.md)
+- **Fork only:** this fork additionally registers a specialist agent roster on
+  OpenCode — see [docs/superagent.md](docs/superagent.md). It is not part of
+  upstream Superpowers, so the install command above does not include it; the
+  fork's install spec is in that document.
 
 ### Pi
 

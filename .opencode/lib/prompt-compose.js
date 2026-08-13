@@ -69,6 +69,13 @@ export const extractDispatchTemplate = (text, label = 'template') => {
 
   // Drop the dispatch header lines. `model:` in these templates spans two
   // lines, so continuation lines (deeper indented, no key) go with it.
+  //
+  // `prompt:` is the exception, and explicitly so. Its "continuation" is the
+  // entire agent-facing body — the thing we are here to extract. It survives
+  // today only because these templates indent it four spaces while `model:`
+  // wraps at nine, which is a coincidence of formatting rather than a design.
+  // Naming the exception means a template that indents its prompt body more
+  // deeply still extracts correctly.
   const kept = [];
   let skippingKey = false;
   for (const line of body) {
@@ -76,12 +83,13 @@ export const extractDispatchTemplate = (text, label = 'template') => {
       skippingKey = false;
       continue;
     }
-    if (DISPATCH_KEYS.test(line)) {
-      skippingKey = true;
+    const key = line.match(DISPATCH_KEYS);
+    if (key) {
+      skippingKey = key[1] !== 'prompt';
       continue;
     }
-    // A continuation of a skipped key: blank, or indented past the key depth
-    // without introducing content at the prompt body's level.
+    // A continuation of a skipped key: indented past the key depth without
+    // introducing content at the prompt body's level.
     if (skippingKey && /^\s{6,}\S/.test(line) && !line.trim().startsWith('#')) {
       continue;
     }

@@ -78,9 +78,10 @@ Use whatever model IDs your authenticated providers expose — `opencode models`
 lists them. No preset ships with model IDs in it, because the right ones depend
 entirely on which providers you use.
 
-An unrouted slot omits the model and inherits. A slot routed to a model that is
-not available is **dropped with a warning**, never silently swapped for a
-different model.
+An unrouted slot omits the model and inherits. If a slot names a model that is
+not available, the **model assignment** is dropped with a warning — the agent
+still registers and inherits the session model, and is never silently pointed at
+some different model.
 
 ## Configuration
 
@@ -124,7 +125,7 @@ warning rather than taking the layer down.
 |---|---|
 | `team` | Default. Full roster, job board on. |
 | `council` | `team` plus the council. |
-| `solo` | Everything off — exactly the behaviour before this layer existed. |
+| `solo` | All Superagent features off. The bootstrap and skill registration stay — exactly the behaviour before this layer existed. |
 
 **Turning it off:** `{"preset": "solo"}`, or `SUPERAGENT_DISABLE=1`.
 
@@ -143,7 +144,7 @@ failure that makes parallel dispatch worse than serial — both dispatches
 succeed and one silently loses. The orchestrator declares each dispatch's
 claim in the task prompt:
 
-```
+```text
 <!-- superagent-ownership: write=src/api/**; read=src/** -->
 ```
 
@@ -367,7 +368,7 @@ other nine still register, `default_agent` is still set, and the warning names
 
 **The acceptance test passes.** In a clean session:
 
-```
+```text
 $ opencode run "Let's make a react todo list"
 > superagent · deepseek-v4-flash-free
 

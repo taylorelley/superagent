@@ -29,9 +29,24 @@ export const COMMANDS = {
   },
 };
 
-export const registerCommands = (config) => {
+/**
+ * Whether a command is worth offering, given the resolved settings.
+ *
+ * `/council` and `/board` expand to "not configured" text when their feature is
+ * off, so registering them under the `solo` preset offers the user a command
+ * that cannot do anything. `/preset` stays useful in every state — it is how
+ * you turn the layer back on.
+ */
+const COMMAND_ENABLED = {
+  council: (settings) => settings?.council?.enabled !== false,
+  board: (settings) => settings?.board?.enabled !== false,
+  preset: () => true,
+};
+
+export const registerCommands = (config, settings) => {
   config.command = config.command || {};
   for (const [name, spec] of Object.entries(COMMANDS)) {
+    if (!COMMAND_ENABLED[name](settings)) continue;
     if (Object.prototype.hasOwnProperty.call(config.command, name)) {
       warn(`a command named "/${name}" already exists; leaving it alone`);
       continue;
@@ -82,6 +97,10 @@ const presetReport = (settings, args, configDir) => {
   let persisted = false;
   if (persist && configDir) {
     try {
+      // On a first run the config directory may not exist yet, and without this
+      // the write fails, the catch swallows it, and the reply tells the user to
+      // re-run the command that just failed.
+      fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(stateFilePath(configDir), `${JSON.stringify({ preset: name }, null, 2)}\n`);
       persisted = true;
     } catch (err) {

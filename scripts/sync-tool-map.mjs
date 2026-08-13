@@ -23,6 +23,7 @@ const checkOnly = process.argv.includes('--check');
 const body = `${DOC_MARKER_BEGIN}\n\n${renderDocToolMap()}\n\n${DOC_MARKER_END}`;
 
 let drifted = 0;
+let failures = 0;
 
 for (const relative of TARGETS) {
   const filePath = path.join(repoRoot, relative);
@@ -30,9 +31,11 @@ for (const relative of TARGETS) {
 
   const start = original.indexOf(DOC_MARKER_BEGIN);
   const end = original.indexOf(DOC_MARKER_END);
-  if (start === -1 || end === -1) {
-    console.error(`${relative}: missing generated tool-map markers`);
-    drifted += 1;
+  // `end <= start` means the markers are out of order, which would slice
+  // garbage into the file rather than replacing the region.
+  if (start === -1 || end === -1 || end <= start) {
+    console.error(`${relative}: missing or misordered generated tool-map markers`);
+    failures += 1;
     continue;
   }
 
@@ -48,5 +51,7 @@ for (const relative of TARGETS) {
   }
 }
 
-if (checkOnly && drifted) process.exit(1);
+// A marker problem is a failure in either mode: normal mode cannot fix it, and
+// exiting 0 would report success while leaving the document untouched.
+if (failures || (checkOnly && drifted)) process.exit(1);
 if (!checkOnly && !drifted) console.log('tool map already up to date');

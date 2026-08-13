@@ -34,9 +34,16 @@ export const MIN_MEMBERS = 2;
 export const usableMembers = (council) => {
   const members = (council?.members ?? []).filter((m) => m && typeof m.name === 'string' && m.name);
   if (!council?.enabled) return [];
-  if (members.length < MIN_MEMBERS) {
+
+  // The configured threshold wins when it is a sane number, but never drops
+  // below MIN_MEMBERS — a "council" of one is a single opinion with ceremony.
+  const configured = council?.minParticipants;
+  const required =
+    Number.isInteger(configured) && configured >= MIN_MEMBERS ? configured : MIN_MEMBERS;
+
+  if (members.length < required) {
     if (members.length) {
-      warn(`council needs at least ${MIN_MEMBERS} members to be meaningful; got ${members.length}`);
+      warn(`council needs at least ${required} members to be meaningful; got ${members.length}`);
     }
     return [];
   }

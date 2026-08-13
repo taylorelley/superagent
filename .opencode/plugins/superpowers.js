@@ -48,7 +48,7 @@ export const SuperpowersPlugin = async ({ client, directory }) => {
 
       const registered = registerAgents(config, settings);
       councillors = registerCouncillors(config, settings);
-      registerCommands(config);
+      registerCommands(config, settings);
       if (registered.length) {
         routingTable = renderRoutingTable(registered, {
           backgroundAvailable: backgroundSubagentsAvailable(),
@@ -61,13 +61,17 @@ export const SuperpowersPlugin = async ({ client, directory }) => {
     // expansion depends on state the template cannot see: the councillors that
     // were actually registered, the live board, the resolved preset.
     'command.execute.before': guardHook('command.execute.before', async (input, output) => {
+      // Guard before expanding, not after: `/preset <name> --persist` writes the
+      // state file as a side effect, so expanding without somewhere to put the
+      // reply would persist the change and tell the user nothing.
+      if (!output) return;
       const text = expandCommand(input?.command, input?.arguments, {
         settings,
         councillors,
         configDir,
         sessionID: input?.sessionID,
       });
-      if (!text || !output) return;
+      if (!text) return;
       output.parts = [{ type: 'text', text }];
     }),
 

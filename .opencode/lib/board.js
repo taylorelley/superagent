@@ -127,6 +127,11 @@ export const onSessionEvent = (type, sessionID) => {
       }
     }
   }
+
+  // `boards` lives as long as the process, so a deleted session's ledger would
+  // otherwise be retained — and scanned — forever. Done after the transitions
+  // above so a deleted child still settles its parent's record.
+  if (type === 'session.deleted') boards.delete(sessionID);
 };
 
 /** Render the board, or null when there is nothing worth showing. */

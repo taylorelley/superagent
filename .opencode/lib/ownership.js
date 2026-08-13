@@ -63,6 +63,18 @@ const globToRegExp = (glob) => {
   return new RegExp(`^${out}$`);
 };
 
+// Patterns repeat across every pairwise comparison in a dispatch, and the
+// alternations are cheap to match but not free to compile.
+const regexCache = new Map();
+const cachedRegExp = (glob) => {
+  let compiled = regexCache.get(glob);
+  if (!compiled) {
+    compiled = globToRegExp(glob);
+    regexCache.set(glob, compiled);
+  }
+  return compiled;
+};
+
 /**
  * Do two write claims overlap?
  *
@@ -75,8 +87,8 @@ export const globsOverlap = (a, b) => {
   if (a === b) return true;
   const literalPrefix = (glob) => glob.split(/[*?]/)[0];
   return (
-    globToRegExp(a).test(literalPrefix(b)) ||
-    globToRegExp(b).test(literalPrefix(a)) ||
+    cachedRegExp(a).test(literalPrefix(b)) ||
+    cachedRegExp(b).test(literalPrefix(a)) ||
     literalPrefix(a).startsWith(literalPrefix(b)) ||
     literalPrefix(b).startsWith(literalPrefix(a))
   );

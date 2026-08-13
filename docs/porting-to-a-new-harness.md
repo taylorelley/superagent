@@ -252,10 +252,18 @@ nesting differ per harness**.
 
 ### Shape B — In-process plugin / extension
 
-> **Note for porters:** this fork's OpenCode plugin is a superset. The parts
-> worth copying as a Shape B reference are the entry point,
-> `.opencode/lib/bootstrap.js`, and `.opencode/lib/tool-map.js`. The rest —
-> `lib/roster.js`, `lib/agents.js`, `lib/board.js`, `lib/council.js`,
+> **Note for porters:** this fork's OpenCode plugin is a superset, and its entry
+> point does **not** stand alone — it imports the whole Superagent layer.
+>
+> The parts that illustrate Shape B are `.opencode/lib/bootstrap.js` (build the
+> string, inject it as a user message) and `.opencode/lib/tool-map.js` (the
+> harness mapping as data), plus the small shared helpers `lib/paths.js`,
+> `lib/fs-utils.js` and `lib/log.js`. Read those.
+>
+> Everything else in the entry point's import closure — `lib/config-schema.js`,
+> `lib/presets.js`, `lib/roster.js`, `lib/agents.js`, `lib/routing.js`,
+> `lib/prompt-compose.js`, `lib/capabilities.js`, `lib/board.js`,
+> `lib/ownership.js`, `lib/council.js`, `lib/commands.js` and
 > `.opencode/prompts/` — is the Superagent agent-team layer, which is
 > OpenCode-specific and fork-specific. See `docs/superagent.md`.
 
