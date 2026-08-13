@@ -47,7 +47,7 @@ const boardFor = (sessionID) => {
   return boards.get(sessionID);
 };
 
-const truncate = (text, max = 600) => {
+export const truncate = (text, max = 600) => {
   const clean = String(text ?? '').trim().replace(/\s+/g, ' ');
   return clean.length <= max ? clean : `${clean.slice(0, max)}…`;
 };
@@ -112,18 +112,27 @@ export const onDispatchResult = (sessionID, callID, output, settings) => {
   record.result = truncate(output?.output);
 };
 
-/** Mark a background dispatch finished, from a session lifecycle event. */
+/**
+ * Mark a background dispatch finished, from a session lifecycle event.
+ *
+ * Returns whether anything changed. The event hook fires for every event
+ * OpenCode publishes, and most of them are not lifecycle events at all, so
+ * callers with work to do afterwards — projecting the board to the TUI
+ * snapshot, say — need to know the difference.
+ */
 export const onSessionEvent = (type, sessionID) => {
-  if (!sessionID) return;
+  if (!sessionID) return false;
   const terminal = { 'session.idle': 'completed', 'session.error': 'error', 'session.deleted': 'cancelled' };
   const state = terminal[type];
-  if (!state) return;
+  if (!state) return false;
 
+  let changed = false;
   for (const board of boards.values()) {
     for (const record of board.records.values()) {
       if (record.childSessionID === sessionID && record.state === 'running') {
         record.state = state;
         record.endedAt = Date.now();
+        changed = true;
       }
     }
   }
@@ -131,7 +140,42 @@ export const onSessionEvent = (type, sessionID) => {
   // `boards` lives as long as the process, so a deleted session's ledger would
   // otherwise be retained — and scanned — forever. Done after the transitions
   // above so a deleted child still settles its parent's record.
-  if (type === 'session.deleted') boards.delete(sessionID);
+  if (type === 'session.deleted') changed = boards.delete(sessionID) || changed;
+
+  return changed;
+};
+
+/**
+ * The board as plain data, for the TUI panel.
+ *
+ * A projection of the same records `renderBoard` formats, not a second ledger:
+ * the panel is a different audience (a human, live, in the sidebar) but it must
+ * never be able to disagree with what the model is told. Every session this
+ * process knows about is included, because the panel is keyed by the session
+ * the user is looking at and the plugin cannot know which one that is.
+ */
+export const boardSnapshots = () => {
+  const out = {};
+  for (const [sessionID, board] of boards.entries()) {
+    if (board.records.size === 0) continue;
+    const records = [...board.records.values()];
+    out[sessionID] = {
+      // Derived from the records rather than read off the clock: the snapshot
+      // writer skips a write when the bytes are unchanged, and a wall-clock
+      // stamp would make every board look different from the last one.
+      updatedAt: Math.max(...records.map((r) => r.endedAt ?? r.startedAt ?? 0), 0),
+      records: records.map((r) => ({
+        agent: r.agent,
+        objective: r.objective,
+        state: r.state,
+        background: r.background === true,
+        owns: r.ownership?.write ?? [],
+        startedAt: r.startedAt,
+        ...(r.endedAt ? { endedAt: r.endedAt } : {}),
+      })),
+    };
+  }
+  return out;
 };
 
 /** Render the board, or null when there is nothing worth showing. */

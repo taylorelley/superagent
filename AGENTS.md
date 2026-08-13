@@ -104,10 +104,11 @@ On top of the skills methodology it inherited from Superpowers, this fork adds
 an agent-team layer: a roster of specialist agents, per-slot model routing, a
 job board, and an optional council.
 
-- `.opencode/lib/` — plugin modules (roster, council, board, routing, commands)
+- `.opencode/lib/` — plugin modules (roster, council, board, routing, commands, TUI panel)
 - `.opencode/prompts/` — agent prompts
+- `.opencode/tui/` — the TUI sidebar panel entry point
 - `docs/superagent.md` — the documentation
-- `tests/opencode/test-superagent.*`, `tests/opencode/test-board.*`
+- `tests/opencode/test-superagent.*`, `tests/opencode/test-board.*`, `tests/opencode/test-tui.*`
 
 See `docs/superagent.md`.
 

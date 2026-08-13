@@ -56,6 +56,22 @@ registers all skills.
 
 Verify by asking: "What can Superagent do?"
 
+### Add the sidebar panel (optional)
+
+Superagent can also render a panel into the TUI sidebar — its version, the
+active preset, the registered roster, and the live job board. The TUI reads its
+plugin list from a separate file, so add the same entry to `tui.json` alongside
+your `opencode.json` (creating it if it does not exist):
+
+```json
+{
+  "plugin": ["superagent@git+https://github.com/taylorelley/superagent.git"]
+}
+```
+
+Restart OpenCode and open a session; the panel appears under the sidebar's own
+sections. Everything else works without this — you just get no panel.
+
 ## Migrating from the old symlink-based install
 
 If you previously installed superagent using `git clone` and symlinks, remove the old setup:

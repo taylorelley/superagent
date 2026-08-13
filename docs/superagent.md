@@ -115,7 +115,8 @@ warning rather than taking the layer down.
     "strategy": "latest",     // or "checkpoint"
     "enforceOwnership": "warn" // or "off"
   },
-  "bootstrap": { "enabled": true }
+  "bootstrap": { "enabled": true },
+  "tui": { "enabled": true }     // the sidebar panel
 }
 ```
 
@@ -155,6 +156,83 @@ work. Running dispatches that declared nothing are flagged, since those are the
 ones where a collision cannot be detected at all.
 
 There is no poller and no wake scheduler — see the API notes below for why.
+
+## The sidebar panel
+
+Everything above is addressed to the model. The routing table lives in the
+system prompt, the board snapshot is injected into the conversation and — under
+the default `latest` strategy — stripped and rewritten every turn, and `/board`
+spends a model turn printing state the plugin already holds. None of that is
+much use to the human at the keyboard.
+
+So Superagent also renders a panel into OpenCode's TUI sidebar:
+
+```text
+ Superagent                  v6.3.0
+ team · agents on · board on
+
+ Agents
+ superagent                 inherit
+ implementer                inherit
+ …
+ +2 more
+
+ Dispatches                     2/6
+ code-reviewer              running
+   Review task 3 against the plan
+ implementer           running (bg)
+   Add the failing test for snaps…
+   owns .opencode/lib/**
+ librarian                completed
+ +1 more
+```
+
+Live, free, and always the current state: the version and preset answer "did my
+update land" and "why is it behaving like that", and the dispatch list answers
+"what is running and what is it holding" — the ownership line especially, since
+that is what says two agents are about to collide.
+
+Both lists are capped, because a panel that outgrows the sidebar is silently
+clipped from the bottom, which is where the live section is. Turn the panel off
+with `{"tui": {"enabled": false}}`, or with `SUPERAGENT_DISABLE=1`, which turns
+off everything.
+
+### Registering it
+
+The panel is a **second plugin entry point**, and OpenCode configures the two
+separately. `opencode.json` is read by the server, `tui.json` by the TUI, so
+Superagent has to be listed in both:
+
+```jsonc
+// ~/.config/opencode/opencode.json
+{ "plugin": ["superagent@git+https://github.com/taylorelley/superagent.git"] }
+
+// ~/.config/opencode/tui.json
+{ "plugin": ["superagent@git+https://github.com/taylorelley/superagent.git"] }
+```
+
+Listing it in only `opencode.json` is the supported, complete setup for
+everything else in this document — you simply get no panel.
+
+### How it is built
+
+Three constraints shape it, all verified below:
+
+- **It is a separate module.** A plugin module default-exports either `server()`
+  or `tui()`, never both, and the TUI entry is resolved from
+  `exports["./tui"]` in `package.json` — `.opencode/tui/superagent-tui.js`.
+- **It renders through the host's OpenTUI, not its own.** Superagent has no
+  dependencies, and a second copy of the renderer would be wrong even if it had.
+  The panel imports the host's instance through the virtual specifier
+  `opentui:runtime-module:%40opentui%2Fsolid`. If that import fails the panel is
+  not registered, and nothing else is affected.
+- **The board reaches it through a file.** The two entries are separate module
+  graphs in separate processes, so `board.js`'s in-memory ledger is not visible
+  from the panel. Each change is projected to
+  `~/.config/opencode/superagent/tui-<hash-of-project-dir>.json`, which the
+  panel polls once a second. Only the board crosses: the version, preset and
+  roster are recomputed on the TUI side from the same modules the plugin uses,
+  so there is nothing to keep in sync.
 
 ## Background dispatch
 
@@ -336,6 +414,53 @@ The hook is triggered with an empty input object from two places:
 from the messages themselves (`info.sessionID`), and anything injected here will
 also be seen by the compaction summarizer.
 
+### TUI plugins are configured in `tui.json`, not `opencode.json`
+
+The TUI resolves its own plugin list from files named `tui.json`/`tui.jsonc` —
+the global config dir, `OPENCODE_TUI_CONFIG`, project files, and any `.opencode`
+directory on the way up (`packages/opencode/src/config/tui.ts:183-210`). The
+result is passed to the TUI plugin host, which uses it verbatim:
+`config.plugin_origins ?? (await TuiConfig.pluginOrigins())`
+(`packages/opencode/src/plugin/tui/runtime.ts`). An empty list is not nullish, so
+a plugin listed only in `opencode.json` is loaded by the server and never by the
+TUI.
+
+This is silent. The TUI host reports failures with `console.error`, which the
+running terminal UI paints over, and a plugin that is never even considered
+reports nothing at all.
+
+### A TUI entry is a separate module, resolved from `exports["./tui"]`
+
+`readV1Plugin` throws if a module exports both `server` and `tui`
+(`packages/opencode/src/plugin/shared.ts:293`), and `resolvePackageEntrypoint`
+reads `exports["./${kind}"]` — falling back to `main` only for `server`
+(`shared.ts:103-113`). A package with no `./tui` export has no TUI entry.
+
+Path-source plugins must also export an `id`; npm and git specs fall back to the
+package name (`shared.ts:resolvePluginId`).
+
+### The TUI hands plugins its own OpenTUI through a virtual specifier
+
+The TUI host calls `ensureRuntimePluginSupport`, which registers a Bun plugin
+mapping `@opentui/solid`, `@opentui/core`, `solid-js` and friends onto virtual
+`opentui:runtime-module:<encoded specifier>` ids
+(`@opentui/solid/scripts/runtime-plugin-support-configure.js`).
+
+A **bare** `import("@opentui/solid")` does not reach it from an installed
+plugin: the rewrite defaults are `nodeModulesRuntimeSpecifiers: true`,
+`nodeModulesBareSpecifiers: false` (`@opentui/core/runtime-plugin.js:46`), so
+bare specifiers inside `node_modules` are left to normal resolution and fail
+unless the plugin ships its own copy — which is how plugins that depend on
+`@opencode-ai/plugin` (peer deps `@opentui/*`) get one. Importing the virtual id
+works from anywhere, and is what Superagent does.
+
+### Slot functions receive the slot context, not the slot props
+
+`TuiHostSlotMap` declares `sidebar_content: { session_id: string }`, but the
+argument a registered slot function is actually called with is the
+`TuiSlotContext` — `{ theme }`. The current session id has to come from
+`api.route.current.params.sessionID` instead.
+
 ### Verified against a live OpenCode
 
 Run against `opencode-ai@1.18.17` on Linux, in an isolated `OPENCODE_CONFIG_DIR`.
@@ -389,6 +514,16 @@ before anything was written, and no code was produced.
 plugin observing the message array confirmed the routing table is present on
 every turn and a job-board snapshot appears on the root session after a
 dispatch — and does *not* appear on the child session.
+
+**The sidebar panel renders.** Run against `opencode-ai@1.18.18`, with the
+package registered in both `opencode.json` and `tui.json`. The panel appears in
+the session sidebar showing `Superagent v6.3.0`, the active preset, the
+subsystem line, the roster capped at eight with `+2 more`, and — from a snapshot
+written for that session — running dispatches first with their objectives and
+`owns` lines, finished ones on a single line, and `+1 more`. The virtual
+`opentui:runtime-module:` import resolved; a bare `@opentui/solid` import
+failed with `Cannot find module`, from a plugin both inside and outside a
+`node_modules` path.
 
 That last test also produced a finding. Asked about the board, a model replied
 that it "is user-supplied text, not injected context" and declined to use it —

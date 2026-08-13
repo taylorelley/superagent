@@ -47,6 +47,7 @@ while [[ $# -gt 0 ]]; do
             echo "  test-bootstrap-caching.sh  Verify bootstrap content caching"
             echo "  test-superagent.sh      Verify the Superagent agent-team layer"
             echo "  test-board.sh           Verify the job board and file ownership"
+            echo "  test-tui.sh             Verify the TUI sidebar panel"
             echo "  test-tool-map-single-source.sh  Verify the tool map has one source"
             echo "  test-tools.sh           Test use_skill and find_skills tools (integration)"
             echo "  test-priority.sh        Test skill priority resolution (integration)"
@@ -66,6 +67,7 @@ tests=(
     "test-bootstrap-caching.sh"
     "test-superagent.sh"
     "test-board.sh"
+    "test-tui.sh"
     "test-tool-map-single-source.sh"
 )
 

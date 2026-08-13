@@ -47,6 +47,9 @@ Superagent is a plugin for [OpenCode](https://opencode.ai).
   ```
 
 - Verify by asking: "What can Superagent do?"
+- For the TUI sidebar panel — version, preset, roster, and the live job board —
+  add the same entry to `tui.json`, which is where OpenCode's TUI reads its own
+  plugin list. See [.opencode/INSTALL.md](.opencode/INSTALL.md).
 - Install and troubleshooting details: [.opencode/INSTALL.md](.opencode/INSTALL.md)
 - Full guide: [docs/README.opencode.md](docs/README.opencode.md)
 - Superagent also registers a roster of specialist agents on OpenCode — see
