@@ -5,8 +5,7 @@ labels: bug
 ---
 
 <!--
-BEFORE FILING: Search open AND closed issues. The Windows SessionStart
-hook alone has been reported 29 times. If your issue already exists,
+BEFORE FILING: Search open AND closed issues. If your issue already exists,
 add a comment or reaction to the existing one instead.
 -->
 
@@ -19,8 +18,7 @@ add a comment or reaction to the existing one instead.
 | Field | Value |
 |-------|-------|
 | Superpowers version | |
-| Harness (Claude Code, Cursor, etc.) | |
-| Harness version | |
+| OpenCode version | |
 | Your model + version | |
 | All plugins installed | |
 | OS + shell | |

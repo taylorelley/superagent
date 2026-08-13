@@ -8,7 +8,7 @@ Add superpowers to the `plugin` array in your `opencode.json` (global or project
 
 ```json
 {
-  "plugin": ["superpowers@git+https://github.com/obra/superpowers.git"]
+  "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git"]
 }
 ```
 
@@ -16,9 +16,6 @@ Restart OpenCode. The plugin installs through OpenCode's plugin manager and
 registers all skills.
 
 Verify by asking: "Tell me about your superpowers"
-
-OpenCode uses its own plugin install. If you also use Claude Code, Codex, or
-another harness, install Superpowers separately for each one.
 
 ### Migrating from the old symlink-based install
 
@@ -87,13 +84,16 @@ and Bun versions pin that resolved git dependency in a lockfile or cache, so a
 restart may not pick up the newest Superpowers commit. If updates do not appear,
 clear OpenCode's package cache or reinstall the plugin.
 
-To pin a specific version, use a branch or tag:
+To follow a branch or tag, append it:
 
 ```json
 {
-  "plugin": ["superpowers@git+https://github.com/obra/superpowers.git#v5.0.3"]
+  "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git#main"]
 }
 ```
+
+A branch moves, so that selects a line of development rather than pinning one.
+For a reproducible install, append a full commit SHA instead.
 
 ## How It Works
 
@@ -126,17 +126,11 @@ Use OpenCode's native `skill` tool to list and load skills.
 
 ## Superagent
 
-> **Superagent is not in upstream Superpowers.** The install commands earlier in
-> this document install `obra/superpowers`, which does not contain this layer.
-> To get Superagent, install this fork instead:
->
-> ```json
-> {
->   "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git#claude/opencode-plugin-integration-5vccnv"]
-> }
-> ```
+> **Not in upstream Superpowers.** This layer is specific to
+> `taylorelley/superpowers`; installing `obra/superpowers` gets you the skills
+> without it.
 
-This fork adds a specialist agent roster on top of the skills above: an
+Superpowers adds a specialist agent roster on top of the skills above: an
 orchestrator that plans and delegates, implementers, reviewers, an oracle and a
 librarian, each routable to its own model, plus a job board that stops two
 concurrent dispatches writing the same file.
@@ -161,7 +155,7 @@ the plugin, try installing with system npm and pointing OpenCode at the local
 package:
 
 ```powershell
-npm install superpowers@git+https://github.com/obra/superpowers.git --prefix "$HOME\.config\opencode"
+npm install superpowers@git+https://github.com/taylorelley/superpowers.git --prefix "$HOME\.config\opencode"
 ```
 
 Then use the installed package path in `opencode.json`:
@@ -185,6 +179,6 @@ Then use the installed package path in `opencode.json`:
 
 ## Getting Help
 
-- Report issues: https://github.com/obra/superpowers/issues
-- Main documentation: https://github.com/obra/superpowers
+- Report issues: https://github.com/taylorelley/superpowers/issues
+- Main documentation: https://github.com/taylorelley/superpowers
 - OpenCode docs: https://opencode.ai/docs/
