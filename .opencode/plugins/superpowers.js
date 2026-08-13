@@ -21,6 +21,7 @@ import { loadConfig } from '../lib/config-schema.js';
 import { registerAgents } from '../lib/agents.js';
 import { renderRoutingTable } from '../lib/routing.js';
 import { backgroundSubagentsAvailable } from '../lib/capabilities.js';
+import { onDispatch, onDispatchResult, onSessionEvent, injectBoard } from '../lib/board.js';
 import { guardHook, debug } from '../lib/log.js';
 
 export const SuperpowersPlugin = async ({ client, directory }) => {
@@ -53,11 +54,33 @@ export const SuperpowersPlugin = async ({ client, directory }) => {
       debug(`preset=${settings.preset} agents=${registered.length}`);
     }),
 
+    // Record each dispatch and check its file ownership against what is
+    // already running. Runs before the tool, so the outgoing prompt can be
+    // annotated when two dispatches claim the same paths.
+    'tool.execute.before': guardHook('tool.execute.before', async (input, output) => {
+      if (input?.tool !== 'task') return;
+      onDispatch(input.sessionID, input.callID, output?.args, settings);
+    }),
+
+    'tool.execute.after': guardHook('tool.execute.after', async (input, output) => {
+      if (input?.tool !== 'task') return;
+      onDispatchResult(input.sessionID, input.callID, output, settings);
+    }),
+
+    // Background dispatches return as soon as the job starts, so their outcome
+    // arrives as a session lifecycle event on the child.
+    event: guardHook('event', async ({ event } = {}) => {
+      if (!event?.type) return;
+      onSessionEvent(event.type, event.properties?.sessionID ?? event.properties?.info?.id);
+    }),
+
     'experimental.chat.messages.transform': guardHook(
       'messages transform',
       async (_input, output) => {
-        if (settings.bootstrap?.enabled === false) return;
-        injectBootstrap(output?.messages, getBootstrapContent(skillsDir, routingTable));
+        if (settings.bootstrap?.enabled !== false) {
+          injectBootstrap(output?.messages, getBootstrapContent(skillsDir, routingTable));
+        }
+        injectBoard(output?.messages, settings);
       }
     ),
   };
