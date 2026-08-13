@@ -39,7 +39,7 @@ Superpowers is a plugin for [OpenCode](https://opencode.ai).
 - Tell OpenCode:
 
   ```
-  Fetch and follow instructions from .opencode/INSTALL.md in this repository
+  Fetch and follow instructions from https://raw.githubusercontent.com/taylorelley/superpowers/refs/heads/main/.opencode/INSTALL.md
   ```
 
 - Or add it to the `plugin` array in your `opencode.json` (global or
@@ -78,10 +78,11 @@ Superpowers is a plugin for [OpenCode](https://opencode.ai).
 
 ## Community
 
-Superpowers is built by [Jesse Vincent](https://blog.fsck.com) and the rest of the folks at [Prime Radiant](https://primeradiant.com).
+Superpowers is built by [Jesse Vincent](https://blog.fsck.com) and the rest of the folks at [Prime Radiant](https://primeradiant.com). This OpenCode-only fork is maintained separately.
 
+- **Issues with this fork**: https://github.com/taylorelley/superpowers/issues
+- **Upstream Superpowers**: https://github.com/obra/superpowers — the multi-harness original
 - **Discord**: [Join us](https://discord.gg/35wsABTejz) for community support, questions, and sharing what you're building with Superpowers
-- **Issues**: https://github.com/obra/superpowers/issues
 - **Release announcements**: [Sign up](https://primeradiant.com/superpowers/) to get notified about new versions
 
 ## What's Inside

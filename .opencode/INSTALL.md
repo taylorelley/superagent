@@ -10,7 +10,7 @@ Add superpowers to the `plugin` array in your `opencode.json` (global or project
 
 ```json
 {
-  "plugin": ["superpowers@git+https://github.com/obra/superpowers.git"]
+  "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git"]
 }
 ```
 
@@ -52,11 +52,11 @@ and Bun versions pin that resolved git dependency in a lockfile or cache, so a
 restart may not pick up the newest Superpowers commit. If updates do not appear,
 clear OpenCode's package cache or reinstall the plugin.
 
-To pin a specific version:
+To pin a specific revision, append a branch, tag, or commit:
 
 ```json
 {
-  "plugin": ["superpowers@git+https://github.com/obra/superpowers.git#v5.0.3"]
+  "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git#main"]
 }
 ```
 
@@ -77,7 +77,7 @@ the plugin, try installing with system npm and pointing OpenCode at the local
 package:
 
 ```powershell
-npm install superpowers@git+https://github.com/obra/superpowers.git --prefix "$HOME\.config\opencode"
+npm install superpowers@git+https://github.com/taylorelley/superpowers.git --prefix "$HOME\.config\opencode"
 ```
 
 Then use the installed package path in `opencode.json`:
@@ -113,21 +113,15 @@ Use OpenCode's native `skill` tool to list and load skills.
 
 <!-- END GENERATED TOOL MAP -->
 
-## Superagent (this fork)
+## Superagent
 
-> **Superagent is not in upstream Superpowers.** The install commands earlier in
-> this document install `obra/superpowers`, which does not contain this layer.
-> To get Superagent, install this fork instead:
->
-> ```json
-> {
->   "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git#claude/opencode-plugin-integration-5vccnv"]
-> }
-> ```
-
-This fork registers a roster of specialist agents on OpenCode — an orchestrator
+Superpowers registers a roster of specialist agents on OpenCode — an orchestrator
 that delegates, implementers, reviewers, an oracle, a librarian — each routable
 to its own model. It is on by default.
+
+> **Not in upstream Superpowers.** This layer is specific to
+> `taylorelley/superpowers`; installing `obra/superpowers` gets you the skills
+> without it.
 
 For parallel dispatch, start OpenCode with background subagents enabled:
 
@@ -151,5 +145,5 @@ If your agents do not appear, or a name collides with one of your own, see
 
 ## Getting Help
 
-- Report issues: https://github.com/obra/superpowers/issues
-- Full documentation: https://github.com/obra/superpowers/blob/main/docs/README.opencode.md
+- Report issues: https://github.com/taylorelley/superpowers/issues
+- Full documentation: https://github.com/taylorelley/superpowers/blob/main/docs/README.opencode.md
