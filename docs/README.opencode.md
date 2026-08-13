@@ -124,6 +124,16 @@ Use OpenCode's native `skill` tool to list and load skills.
 
 (Verified against the installed OpenCode CLI's tool inventory.)
 
+## Superagent
+
+This fork adds a specialist agent roster on top of the skills above: an
+orchestrator that plans and delegates, implementers, reviewers, an oracle and a
+librarian, each routable to its own model, plus a job board that stops two
+concurrent dispatches writing the same file.
+
+It is on by default and documented in [superagent.md](superagent.md). Set
+`{"preset": "solo"}` in `superagent.json` to turn it off.
+
 ## Troubleshooting
 
 ### Plugin not loading

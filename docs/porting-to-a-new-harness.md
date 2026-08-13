@@ -252,6 +252,13 @@ nesting differ per harness**.
 
 ### Shape B — In-process plugin / extension
 
+> **Note for porters:** this fork's OpenCode plugin is a superset. The parts
+> worth copying as a Shape B reference are the entry point,
+> `.opencode/lib/bootstrap.js`, and `.opencode/lib/tool-map.js`. The rest —
+> `lib/roster.js`, `lib/agents.js`, `lib/board.js`, `lib/council.js`,
+> `.opencode/prompts/` — is the Superagent agent-team layer, which is
+> OpenCode-specific and fork-specific. See `docs/superagent.md`.
+
 The harness loads a JS/TS module that exposes lifecycle callbacks. You register
 the skills directory through the harness's API and inject the bootstrap by
 mutating the message array in code.

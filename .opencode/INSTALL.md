@@ -116,6 +116,32 @@ Use OpenCode's native `skill` tool to list and load skills.
 
 <!-- END GENERATED TOOL MAP -->
 
+## Superagent (this fork)
+
+This fork registers a roster of specialist agents on OpenCode — an orchestrator
+that delegates, implementers, reviewers, an oracle, a librarian — each routable
+to its own model. It is on by default.
+
+For parallel dispatch, start OpenCode with background subagents enabled:
+
+```bash
+OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true opencode
+```
+
+Without it everything still works; the orchestrator dispatches in one message
+instead of in the background.
+
+Configure in `~/.config/opencode/superagent.json` or
+`<project>/.opencode/superagent.json`. To turn the whole layer off and get the
+plain Superpowers behaviour back:
+
+```json
+{ "preset": "solo" }
+```
+
+If your agents do not appear, or a name collides with one of your own, see
+[docs/superagent.md](https://github.com/taylorelley/superpowers/blob/main/docs/superagent.md).
+
 ## Getting Help
 
 - Report issues: https://github.com/obra/superpowers/issues

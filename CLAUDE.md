@@ -107,6 +107,20 @@ Skill-behavior evals live in [superpowers-evals](https://github.com/prime-radian
 
 Before proposing changes to skill design, workflow philosophy, or architecture, read existing skills and understand the project's design decisions. Superpowers has its own tested philosophy about skill design, agent behavior shaping, and terminology (e.g., "your human partner" is deliberate, not interchangeable with "the user"). Changes that rewrite the project's voice or restructure its approach without understanding why it exists will be rejected.
 
+## Fork-specific code
+
+This fork carries an OpenCode-only agent-team layer called Superagent. These
+paths are fork-specific and must never be proposed upstream to
+`obra/superpowers` — it forbids tool-specific features and fork-specific
+changes, and would close them on both counts:
+
+- `.opencode/lib/` (except `bootstrap.js`, `tool-map.js`, `paths.js`, `fs-utils.js`, `log.js`)
+- `.opencode/prompts/`
+- `docs/superagent.md`
+- `tests/opencode/test-superagent.*`, `tests/opencode/test-board.*`
+
+See `docs/superagent.md`.
+
 ## General
 
 - Read `.github/PULL_REQUEST_TEMPLATE.md` before submitting

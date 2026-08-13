@@ -15,6 +15,211 @@ work rather than doing it.
 
 ---
 
+## The roster
+
+Ten agents, registered automatically. Six reuse prompts Superpowers already
+ships; four are new to this layer.
+
+| Agent | Dispatch it for | Model slot |
+|---|---|---|
+| `superagent` | The primary agent. Plans and delegates; does not implement. | `orchestrator` |
+| `implementer` | One scoped task from a plan | `implementer` |
+| `implementer-deep` | A task an earlier implementer failed to fix | `implementerDeep` |
+| `task-reviewer` | One task's diff, for spec compliance and quality | `reviewer` |
+| `re-reviewer` | Whether a fix round addressed its findings | `reviewer` |
+| `code-reviewer` | The whole-branch review before merge | `deepReviewer` |
+| `spec-reviewer` | A spec document, before planning starts | `docReviewer` |
+| `plan-reviewer` | A plan document, before implementation starts | `docReviewer` |
+| `oracle` | An architecture call, or a bug that resisted a fix | `oracle` |
+| `librarian` | External documentation and API research | `librarian` |
+
+OpenCode's built-in `explore` (read-only reconnaissance) and `general` are used
+as-is rather than duplicated.
+
+Every specialist has `task` denied, which removes the tool from it entirely —
+so "you do not dispatch subagents" is structural rather than a request the
+prompt has to keep making. Reviewers and advisors also have `edit` denied. The
+orchestrator can only write under `.superpowers/`.
+
+### Names
+
+The names are unprefixed because they are meant to be typed. If one collides
+with an agent you already have, **yours wins** — Superagent logs a warning and
+skips that entry. To register the full roster alongside your own, set a prefix:
+
+```json
+{ "agents": { "prefix": "sp-" } }
+```
+
+## Model routing
+
+This is the reason the roster exists. OpenCode's `task` tool has no `model`
+parameter, so the only way to run a reviewer on a different model from an
+implementer is for them to be different *agents*.
+
+Out of the box every slot is unrouted, meaning each agent inherits your session
+model. You get role separation and context isolation, but not cost control.
+Routing is per slot:
+
+```json
+{
+  "agents": {
+    "models": {
+      "implementer": "anthropic/claude-haiku-4-5",
+      "reviewer":    "anthropic/claude-haiku-4-5",
+      "deepReviewer":"anthropic/claude-opus-4-5",
+      "oracle":      "anthropic/claude-opus-4-5"
+    }
+  }
+}
+```
+
+Use whatever model IDs your authenticated providers expose — `opencode models`
+lists them. No preset ships with model IDs in it, because the right ones depend
+entirely on which providers you use.
+
+An unrouted slot omits the model and inherits. A slot routed to a model that is
+not available is **dropped with a warning**, never silently swapped for a
+different model.
+
+## Configuration
+
+Merged in order, later winning:
+
+1. built-in defaults
+2. the active preset
+3. `~/.config/opencode/superagent.json` (honours `OPENCODE_CONFIG_DIR`)
+4. `<project>/.opencode/superagent.json`
+5. `~/.config/opencode/superagent.state.json` (written by `/preset --persist`)
+6. `SUPERAGENT_PRESET`, `SUPERAGENT_DISABLE`, `SUPERAGENT_DEBUG`
+
+Comments and trailing commas are allowed. A malformed file is ignored with a
+warning rather than taking the layer down.
+
+```jsonc
+{
+  "preset": "team",
+  "agents": {
+    "enabled": true,
+    "prefix": "",
+    "disable": [],            // roster keys to skip
+    "setDefaultAgent": true,  // make `superagent` OpenCode's default agent
+    "models": { /* per slot, see above */ },
+    "temperature": { "reviewer": 0.1, "oracle": 0.1 },
+    "permissionOverrides": {} // per agent, merged over the roster's own
+  },
+  "council": { "enabled": false, "members": [], "minParticipants": 2 },
+  "board": {
+    "enabled": true,
+    "strategy": "latest",     // or "checkpoint"
+    "enforceOwnership": "warn" // or "off"
+  },
+  "bootstrap": { "enabled": true }
+}
+```
+
+### Presets
+
+| Preset | What it does |
+|---|---|
+| `team` | Default. Full roster, job board on. |
+| `council` | `team` plus the council. |
+| `solo` | Everything off — exactly the behaviour before this layer existed. |
+
+**Turning it off:** `{"preset": "solo"}`, or `SUPERAGENT_DISABLE=1`.
+
+`/preset <name>` selects one and `--persist` saves it, but **switching a preset
+does not take effect until OpenCode restarts.** Agent definitions are resolved
+into cached state at startup. The command says so rather than reporting a
+change that has not happened.
+
+## The job board
+
+Every `task` dispatch is recorded, and a compact snapshot is injected into the
+session so the orchestrator can see what it launched. `/board` prints it.
+
+Its real job is preventing concurrent writes to the same file, which is the
+failure that makes parallel dispatch worse than serial — both dispatches
+succeed and one silently loses. The orchestrator declares each dispatch's
+claim in the task prompt:
+
+```
+<!-- superagent-ownership: write=src/api/**; read=src/** -->
+```
+
+A later dispatch whose write claim overlaps a running one gets a notice
+prepended to its prompt naming the conflict. Overlap detection deliberately
+over-reports: a spurious warning costs a sentence, a missed collision costs
+work. Running dispatches that declared nothing are flagged, since those are the
+ones where a collision cannot be detected at all.
+
+There is no poller and no wake scheduler — see the API notes below for why.
+
+## Background dispatch
+
+Off unless you start OpenCode with it:
+
+```bash
+OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true opencode
+```
+
+With it on, the orchestrator dispatches independent work in parallel and is
+notified as each finishes. Without it, the routing table tells it to issue
+several `task` calls in one message instead, and the one-writer-per-file rule
+still applies. A plugin cannot enable this itself.
+
+## The council
+
+`/council <question>` asks several models the same question in parallel and
+synthesizes the answers, reporting agreement as `unanimous`, `majority` or
+`split`, plus every dissenting risk no other member addressed.
+
+It needs at least two members with **distinct** models — councillors on one
+model produce agreement by construction, which is worse than not asking:
+
+```json
+{
+  "council": {
+    "enabled": true,
+    "members": [
+      { "name": "alpha", "model": "provider/model-a", "steering": "correctness and edge cases" },
+      { "name": "beta",  "model": "provider/model-b", "steering": "simplicity and maintainability" }
+    ]
+  }
+}
+```
+
+Councillors are sealed: they read and reason, but cannot edit, dispatch, or run
+commands.
+
+## What degrades, and how
+
+| Feature | If unavailable | Behaviour |
+|---|---|---|
+| Background dispatch | flag not set | Routing table switches to parallel-in-one-message; nothing errors |
+| Model routing | model not in any provider | Key dropped with a warning; agent inherits the session model |
+| An agent name | already taken by the user | Yours is kept; ours is skipped with a warning |
+| Council | fewer than 2 members | `/council` explains how to configure it instead of dispatching |
+| Council | a member fails to answer | Synthesis proceeds and names the failure; under 2 answers is reported inconclusive |
+| A reused prompt template | upstream changed its shape | Agent is skipped with a warning, and a test fails in CI |
+| Config file | malformed | Ignored with a warning; defaults apply |
+| Everything | `preset: "solo"` | Bootstrap and skills only |
+
+## Troubleshooting
+
+**The agents don't appear.** Check the plugin loaded at all:
+`opencode run --print-logs "hello" 2>&1 | grep -i superpowers`. Note that
+plugin-registered agents surfacing in `opencode agent list` is subject to a
+[known caching-order bug](https://github.com/code-yeongyu/oh-my-openagent/issues/1320)
+in OpenCode; they can work in-session while missing from that listing.
+
+**Warnings about a name collision.** You already have an agent with that name.
+Set `agents.prefix`.
+
+**More detail.** `SUPERAGENT_DEBUG=1`.
+
+---
+
 ## Verified behaviour of the OpenCode plugin API
 
 Everything below was read out of `sst/opencode` at commit `14b37df`, not

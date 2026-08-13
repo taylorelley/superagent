@@ -229,6 +229,8 @@ already use it in another harness.
   ```
 
 - Detailed docs: [docs/README.opencode.md](docs/README.opencode.md)
+- This fork also registers a specialist agent roster on OpenCode:
+  [docs/superagent.md](docs/superagent.md)
 
 ### Pi
 
