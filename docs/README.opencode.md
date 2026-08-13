@@ -106,16 +106,43 @@ The plugin does two things:
 
 Skills speak in actions rather than naming any one runtime's tools. On OpenCode these resolve to:
 
-- "Create a todo" / "mark complete in todo list" → `todowrite`
-- `Subagent (general-purpose):` template → OpenCode's `task` tool with `subagent_type: "general"` (or `"explore"` for codebase exploration)
-- "Invoke a skill" → OpenCode's native `skill` tool
-- "Read a file" → `read`
-- "Create a file" / "edit a file" / "delete a file" → `apply_patch`
-- "Run a shell command" → `bash`
-- "Search file contents" / "find files by name" → `grep`, `glob`
-- "Fetch a URL" → `webfetch`
+<!-- BEGIN GENERATED TOOL MAP — source: .opencode/lib/tool-map.js -->
+
+- Create or update todos → `todowrite`
+- `Subagent (general-purpose):` → `task` with `subagent_type: "general"`
+- Invoke a skill → OpenCode's native `skill` tool
+- Read files → `read`
+- Create, edit, or delete files → `apply_patch`
+- Run shell commands → `bash`
+- Search files → `grep`, `glob`
+- Fetch a URL → `webfetch`
+
+For read-only codebase exploration, prefer `subagent_type: "explore"`.
+Use OpenCode's native `skill` tool to list and load skills.
+
+<!-- END GENERATED TOOL MAP -->
 
 (Verified against the installed OpenCode CLI's tool inventory.)
+
+## Superagent
+
+> **Superagent is not in upstream Superpowers.** The install commands earlier in
+> this document install `obra/superpowers`, which does not contain this layer.
+> To get Superagent, install this fork instead:
+>
+> ```json
+> {
+>   "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git#claude/opencode-plugin-integration-5vccnv"]
+> }
+> ```
+
+This fork adds a specialist agent roster on top of the skills above: an
+orchestrator that plans and delegates, implementers, reviewers, an oracle and a
+librarian, each routable to its own model, plus a job board that stops two
+concurrent dispatches writing the same file.
+
+It is on by default and documented in [superagent.md](superagent.md). Set
+`{"preset": "solo"}` in `superagent.json` to turn it off.
 
 ## Troubleshooting
 

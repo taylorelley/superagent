@@ -100,14 +100,57 @@ Then use the installed package path in `opencode.json`:
 
 Skills speak in actions ("create a todo", "dispatch a subagent", "read a file"). On OpenCode these resolve to:
 
-- "Create a todo" / "mark complete in todo list" → `todowrite`
-- `Subagent (general-purpose):` template → `task` tool with `subagent_type: "general"` (or `"explore"` for codebase exploration)
-- "Invoke a skill" → OpenCode's native `skill` tool
-- "Read a file" → `read`
-- "Create a file" / "edit a file" / "delete a file" → `apply_patch`
-- "Run a shell command" → `bash`
-- "Search file contents" / "find files by name" → `grep`, `glob`
-- "Fetch a URL" → `webfetch`
+<!-- BEGIN GENERATED TOOL MAP — source: .opencode/lib/tool-map.js -->
+
+- Create or update todos → `todowrite`
+- `Subagent (general-purpose):` → `task` with `subagent_type: "general"`
+- Invoke a skill → OpenCode's native `skill` tool
+- Read files → `read`
+- Create, edit, or delete files → `apply_patch`
+- Run shell commands → `bash`
+- Search files → `grep`, `glob`
+- Fetch a URL → `webfetch`
+
+For read-only codebase exploration, prefer `subagent_type: "explore"`.
+Use OpenCode's native `skill` tool to list and load skills.
+
+<!-- END GENERATED TOOL MAP -->
+
+## Superagent (this fork)
+
+> **Superagent is not in upstream Superpowers.** The install commands earlier in
+> this document install `obra/superpowers`, which does not contain this layer.
+> To get Superagent, install this fork instead:
+>
+> ```json
+> {
+>   "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git#claude/opencode-plugin-integration-5vccnv"]
+> }
+> ```
+
+This fork registers a roster of specialist agents on OpenCode — an orchestrator
+that delegates, implementers, reviewers, an oracle, a librarian — each routable
+to its own model. It is on by default.
+
+For parallel dispatch, start OpenCode with background subagents enabled:
+
+```bash
+OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true opencode
+```
+
+Without it everything still works; the orchestrator dispatches in one message
+instead of in the background.
+
+Configure in `~/.config/opencode/superagent.json` or
+`<project>/.opencode/superagent.json`. To turn the whole layer off and get the
+plain Superpowers behaviour back:
+
+```json
+{ "preset": "solo" }
+```
+
+If your agents do not appear, or a name collides with one of your own, see
+[docs/superagent.md](https://github.com/taylorelley/superpowers/blob/main/docs/superagent.md).
 
 ## Getting Help
 
