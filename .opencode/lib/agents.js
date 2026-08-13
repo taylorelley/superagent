@@ -83,7 +83,7 @@ const resolveModel = (slot, models, availableModels) => {
  * Mutates `config` and returns the agents that were actually registered, which
  * is what the routing table is rendered from.
  */
-export const registerAgents = (config, settings, { availableModels } = {}) => {
+export const registerAgents = (config, settings, { availableModels, conflicts } = {}) => {
   if (!config || settings?.agents?.enabled === false) return [];
 
   const { prefix = '', disable = [], models, temperature, permissionOverrides } = settings.agents;
@@ -105,6 +105,7 @@ export const registerAgents = (config, settings, { availableModels } = {}) => {
         `an agent named "${name}" already exists; leaving it alone. ` +
           'Set agents.prefix in superagent.json to register the Superagent roster alongside it.'
       );
+      conflicts?.push({ kind: 'agent', name });
       continue;
     }
 
