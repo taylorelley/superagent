@@ -100,14 +100,21 @@ Then use the installed package path in `opencode.json`:
 
 Skills speak in actions ("create a todo", "dispatch a subagent", "read a file"). On OpenCode these resolve to:
 
-- "Create a todo" / "mark complete in todo list" → `todowrite`
-- `Subagent (general-purpose):` template → `task` tool with `subagent_type: "general"` (or `"explore"` for codebase exploration)
-- "Invoke a skill" → OpenCode's native `skill` tool
-- "Read a file" → `read`
-- "Create a file" / "edit a file" / "delete a file" → `apply_patch`
-- "Run a shell command" → `bash`
-- "Search file contents" / "find files by name" → `grep`, `glob`
-- "Fetch a URL" → `webfetch`
+<!-- BEGIN GENERATED TOOL MAP — source: .opencode/lib/tool-map.js -->
+
+- Create or update todos → `todowrite`
+- `Subagent (general-purpose):` → `task` with `subagent_type: "general"`
+- Invoke a skill → OpenCode's native `skill` tool
+- Read files → `read`
+- Create, edit, or delete files → `apply_patch`
+- Run shell commands → `bash`
+- Search files → `grep`, `glob`
+- Fetch a URL → `webfetch`
+
+For read-only codebase exploration, prefer `subagent_type: "explore"`.
+Use OpenCode's native `skill` tool to list and load skills.
+
+<!-- END GENERATED TOOL MAP -->
 
 ## Getting Help
 
