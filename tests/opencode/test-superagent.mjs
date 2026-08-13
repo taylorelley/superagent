@@ -17,7 +17,7 @@ import { loadConfig, readConfigFile } from '../../.opencode/lib/config-schema.js
 import { extractDispatchTemplate, extractDispatchTemplateFile, AGENT_CONTRACT } from '../../.opencode/lib/prompt-compose.js';
 import { ROSTER } from '../../.opencode/lib/roster.js';
 import { registerAgents, resetPromptCache } from '../../.opencode/lib/agents.js';
-import { renderRoutingTable } from '../../.opencode/lib/routing.js';
+import { renderRoutingTable, renderConflicts } from '../../.opencode/lib/routing.js';
 import { backgroundSubagentsAvailable } from '../../.opencode/lib/capabilities.js';
 import { packageRoot } from '../../.opencode/lib/paths.js';
 
@@ -213,6 +213,25 @@ test('an existing agent of the same name is never overwritten', () => {
   assert.ok(!registered.some((e) => e.key === 'implementer'));
 });
 
+test('an agent collision is reported through the conflicts collector', () => {
+  resetPromptCache();
+  const mine = { description: 'MINE', prompt: 'mine' };
+  const config = { agent: { implementer: mine } };
+  const conflicts = [];
+  registerAgents(config, loadConfig({ env: {} }), { conflicts });
+
+  assert.deepEqual(conflicts, [{ kind: 'agent', name: 'implementer' }]);
+});
+
+test('the conflicts collector stays empty when nothing collides', () => {
+  resetPromptCache();
+  const config = {};
+  const conflicts = [];
+  registerAgents(config, loadConfig({ env: {} }), { conflicts });
+
+  assert.deepEqual(conflicts, []);
+});
+
 test('agents.prefix registers the roster alongside a colliding name', () => {
   resetPromptCache();
   const settings = loadConfig({ env: {} });
@@ -299,6 +318,23 @@ test('the routing table changes with background availability', () => {
   assert.ok(!on.includes('OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS'));
   assert.ok(off.includes('OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS'));
   assert.ok(off.includes('one message'));
+});
+
+test('renderConflicts is empty when nothing collided', () => {
+  assert.equal(renderConflicts([]), '');
+  assert.equal(renderConflicts(undefined), '');
+});
+
+test('renderConflicts lists every collision and the prefix remedy', () => {
+  const text = renderConflicts([
+    { kind: 'agent', name: 'implementer' },
+    { kind: 'command', name: 'preset' },
+  ]);
+
+  assert.match(text, /agent `implementer`/);
+  assert.match(text, /command `\/preset`/);
+  assert.match(text, /agents.*prefix/);
+  assert.match(text, /sp-/);
 });
 
 test('background availability is read from the environment', () => {
@@ -416,6 +452,25 @@ test('councillors are not registered when the council is off', () => {
   assert.deepEqual(config.agent ?? {}, {});
 });
 
+test('an existing agent named like a councillor is never overwritten', () => {
+  const mine = { description: 'MINE' };
+  const config = { agent: { 'councillor-alpha': mine } };
+  const registered = registerCouncillors(config, councilSettings(TWO));
+
+  assert.equal(config.agent['councillor-alpha'], mine, "the user's agent was replaced");
+  assert.equal(registered.length, 1);
+  assert.ok(!registered.some((r) => r.name === 'councillor-alpha'));
+  assert.ok(config.agent['councillor-beta'], 'the non-colliding councillor should still register');
+});
+
+test('a councillor collision is reported through the conflicts collector', () => {
+  const config = { agent: { 'councillor-alpha': { description: 'MINE' } } };
+  const conflicts = [];
+  registerCouncillors(config, councilSettings(TWO), { conflicts });
+
+  assert.deepEqual(conflicts, [{ kind: 'agent', name: 'councillor-alpha' }]);
+});
+
 test('the council instruction names every registered councillor', () => {
   const config = {};
   const registered = registerCouncillors(config, councilSettings(TWO));
@@ -445,6 +500,14 @@ test('commands register without clobbering existing ones', () => {
   // /board is on by default; /council is not, so it is gated out here.
   assert.ok(config.command.board, 'other enabled commands should still register');
   assert.equal(Object.keys(COMMANDS).length, 3);
+});
+
+test('a command collision is reported through the conflicts collector', () => {
+  const config = { command: { preset: { template: 'MINE' } } };
+  const conflicts = [];
+  registerCommands(config, loadConfig({ env: {} }), { conflicts });
+
+  assert.deepEqual(conflicts, [{ kind: 'command', name: 'preset' }]);
 });
 
 test('/preset show reports the active preset without claiming a change', () => {

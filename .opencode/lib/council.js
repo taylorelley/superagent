@@ -59,7 +59,7 @@ export const usableMembers = (council) => {
 };
 
 /** Register one subagent per councillor. Returns the registered names. */
-export const registerCouncillors = (config, settings) => {
+export const registerCouncillors = (config, settings, { conflicts } = {}) => {
   const members = usableMembers(settings?.council);
   if (!members.length) return [];
 
@@ -71,6 +71,7 @@ export const registerCouncillors = (config, settings) => {
     const name = `${prefix}councillor-${member.name}`;
     if (Object.prototype.hasOwnProperty.call(config.agent, name)) {
       warn(`an agent named "${name}" already exists; leaving it alone`);
+      conflicts?.push({ kind: 'agent', name });
       continue;
     }
 

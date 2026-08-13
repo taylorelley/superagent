@@ -19,7 +19,7 @@ import { skillsDir, resolveConfigDir } from '../lib/paths.js';
 import { getBootstrapContent, injectBootstrap } from '../lib/bootstrap.js';
 import { loadConfig } from '../lib/config-schema.js';
 import { registerAgents } from '../lib/agents.js';
-import { renderRoutingTable } from '../lib/routing.js';
+import { renderRoutingTable, renderConflicts } from '../lib/routing.js';
 import { backgroundSubagentsAvailable } from '../lib/capabilities.js';
 import { onDispatch, onDispatchResult, onSessionEvent, injectBoard } from '../lib/board.js';
 import { registerCouncillors } from '../lib/council.js';
@@ -46,15 +46,19 @@ export const SuperagentPlugin = async ({ client, directory }) => {
         config.skills.paths.push(skillsDir);
       }
 
-      const registered = registerAgents(config, settings);
-      councillors = registerCouncillors(config, settings);
-      registerCommands(config, settings);
+      const conflicts = [];
+      const registered = registerAgents(config, settings, { conflicts });
+      councillors = registerCouncillors(config, settings, { conflicts });
+      registerCommands(config, settings, { conflicts });
       if (registered.length) {
         routingTable = renderRoutingTable(registered, {
           backgroundAvailable: backgroundSubagentsAvailable(),
         });
       }
-      debug(`preset=${settings.preset} agents=${registered.length}`);
+      if (conflicts.length) {
+        routingTable = [routingTable, renderConflicts(conflicts)].filter(Boolean).join('\n\n');
+      }
+      debug(`preset=${settings.preset} agents=${registered.length} conflicts=${conflicts.length}`);
     }),
 
     // Commands expand here rather than in their template, because the

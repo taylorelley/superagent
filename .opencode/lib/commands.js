@@ -43,12 +43,13 @@ const COMMAND_ENABLED = {
   preset: () => true,
 };
 
-export const registerCommands = (config, settings) => {
+export const registerCommands = (config, settings, { conflicts } = {}) => {
   config.command = config.command || {};
   for (const [name, spec] of Object.entries(COMMANDS)) {
     if (!COMMAND_ENABLED[name](settings)) continue;
     if (Object.prototype.hasOwnProperty.call(config.command, name)) {
       warn(`a command named "/${name}" already exists; leaving it alone`);
+      conflicts?.push({ kind: 'command', name });
       continue;
     }
     config.command[name] = { ...spec };

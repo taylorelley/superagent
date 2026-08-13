@@ -6,6 +6,43 @@
 
 ## Installation
 
+### Before you install: check for name conflicts
+
+Superagent registers a roster of agents and a few slash commands
+(`/council`, `/preset`, `/board`) into `opencode.json`. At runtime it never
+overwrites a name you already have — a collision is skipped with a warning
+and your definition wins (see
+[docs/superagent.md](https://github.com/taylorelley/superagent/blob/main/docs/superagent.md#names)) —
+so skipping this check is never unsafe. It only means you find out about a
+collision from a log line after restarting OpenCode instead of before.
+
+If you are an agent performing this install on a human's behalf, do this
+check first and report the result before editing `opencode.json`:
+
+1. Read the human's existing OpenCode config — global
+   `~/.config/opencode/opencode.json` and any project-level
+   `.opencode/opencode.json` or `opencode.json` — and note the keys already
+   present under `agent` and `command`.
+2. Read the roster and command names Superagent will try to register,
+   straight from source so this never drifts out of date with what actually
+   ships: agent `key`s in
+   [`.opencode/lib/roster.js`](../.opencode/lib/roster.js), and command
+   names in the `COMMANDS` object in
+   [`.opencode/lib/commands.js`](../.opencode/lib/commands.js).
+3. Cross-reference the two lists. If nothing collides, proceed with the
+   install as normal.
+4. If something collides, tell the human before finishing the install and
+   ask how they want to handle it:
+   - **Do nothing** — Superagent skips the colliding name and keeps their
+     existing agent/command (the default, always safe).
+   - **Register alongside it** — add `{"agents": {"prefix": "sp-"}}` to
+     `superagent.json` so the full roster registers under prefixed names
+     instead of being skipped.
+   - **Rename or remove their own entry** first, if they'd rather have the
+     roster take the unprefixed name.
+
+### Add the plugin
+
 Add superagent to the `plugin` array in your `opencode.json` (global or project-level):
 
 ```json
@@ -144,7 +181,8 @@ plain skills behaviour back:
 ```
 
 If your agents do not appear, or a name collides with one of your own, see
-[docs/superagent.md](https://github.com/taylorelley/superagent/blob/main/docs/superagent.md).
+["Before you install: check for name conflicts"](#before-you-install-check-for-name-conflicts)
+above and [docs/superagent.md](https://github.com/taylorelley/superagent/blob/main/docs/superagent.md).
 
 ## Getting Help
 

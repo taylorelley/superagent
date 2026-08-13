@@ -74,3 +74,32 @@ export const renderRoutingTable = (registered, { backgroundAvailable } = {}) => 
   lines.push('</SUPERAGENT_ROUTING>');
   return lines.join('\n');
 };
+
+/**
+ * Render the conflicts collected by `registerAgents` / `registerCouncillors` /
+ * `registerCommands` into a block for the session bootstrap.
+ *
+ * A collision is already handled safely at registration time — the user's
+ * definition wins and Superagent's entry is skipped. This block exists only
+ * to make that visible somewhere other than a stderr log line, by putting it
+ * in the model's context so it can be relayed to the human once.
+ */
+export const renderConflicts = (conflicts) => {
+  if (!conflicts?.length) return '';
+
+  const label = (c) => (c.kind === 'command' ? `command \`/${c.name}\`` : `agent \`${c.name}\``);
+
+  return [
+    '<SUPERAGENT_CONFIG_CONFLICTS>',
+    '**Name conflicts on install.** These already existed in your OpenCode',
+    'config and were left alone — yours wins:',
+    '',
+    ...conflicts.map((c) => `- ${label(c)}`),
+    '',
+    'Set `{"agents": {"prefix": "sp-"}}` in superagent.json to register the full',
+    'Superagent roster alongside your own names instead of skipping them.',
+    'Mention this to your human partner once, near the start of the session,',
+    'then don\'t repeat it.',
+    '</SUPERAGENT_CONFIG_CONFLICTS>',
+  ].join('\n');
+};
