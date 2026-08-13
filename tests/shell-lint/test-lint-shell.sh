@@ -83,12 +83,12 @@ make_fixture_repo() {
   git init -q -b main "$repo"
   configure_git_identity "$repo"
 
-  mkdir -p "$repo/hooks"
+  mkdir -p "$repo/bin"
   cat >"$repo/tracked.sh" <<'EOF'
 #!/usr/bin/env bash
 echo "tracked"
 EOF
-  cat >"$repo/hooks/session-start" <<'EOF'
+  cat >"$repo/bin/session-start" <<'EOF'
 #!/bin/sh
 echo "extensionless"
 EOF
@@ -104,11 +104,11 @@ EOF
 echo "untracked"
 EOF
 
-  git -C "$repo" add tracked.sh hooks/session-start README.md
+  git -C "$repo" add tracked.sh bin/session-start README.md
   git -C "$repo" commit -q -m "fixture"
 
   printf '\necho "changed"\n' >>"$repo/tracked.sh"
-  printf '\necho "changed extensionless"\n' >>"$repo/hooks/session-start"
+  printf '\necho "changed extensionless"\n' >>"$repo/bin/session-start"
 }
 
 run_lint_shell() {
@@ -150,7 +150,7 @@ assert_contains "$tool_log" "shellcheck:" "runs ShellCheck"
 assert_contains "$tool_log" "<--severity=warning>" "uses warning severity as the baseline"
 assert_contains "$tool_log" "<--external-sources>" "allows ShellCheck to follow sourced files"
 assert_contains "$tool_log" "<--source-path=SCRIPTDIR>" "resolves ShellCheck sources relative to each script"
-assert_contains "$tool_log" "<hooks/session-start>" "includes changed extensionless shell shebang file"
+assert_contains "$tool_log" "<bin/session-start>" "includes changed extensionless shell shebang file"
 assert_contains "$tool_log" "<tracked.sh>" "includes changed tracked .sh file"
 assert_contains "$tool_log" "<untracked.sh>" "includes untracked shell files by default"
 assert_not_contains "$tool_log" "README.md" "ignores Markdown with shell snippets"
@@ -167,7 +167,7 @@ tool_log="$(cat "$log")"
 assert_contains "$tool_log" "<-w>" "uses shfmt write mode with --format"
 assert_contains "$tool_log" "shellcheck:" "runs ShellCheck after --format"
 assert_contains "$tool_log" "<--severity=warning>" "keeps warning severity after --format"
-assert_contains "$tool_log" "<hooks/session-start>" "--all includes tracked extensionless shell shebang file"
+assert_contains "$tool_log" "<bin/session-start>" "--all includes tracked extensionless shell shebang file"
 assert_contains "$tool_log" "<tracked.sh>" "--all includes tracked .sh file"
 assert_not_contains "$tool_log" "untracked.sh" "--all ignores untracked shell files"
 

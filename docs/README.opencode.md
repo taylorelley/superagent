@@ -17,9 +17,6 @@ registers all skills.
 
 Verify by asking: "Tell me about your superpowers"
 
-OpenCode uses its own plugin install. If you also use Claude Code, Codex, or
-another harness, install Superpowers separately for each one.
-
 ### Migrating from the old symlink-based install
 
 If you previously installed superpowers using `git clone` and symlinks, remove the old setup:

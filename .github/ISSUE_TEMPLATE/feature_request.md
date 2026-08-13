@@ -38,8 +38,7 @@ progress, and some were intentionally declined.
 | Field | Value |
 |-------|-------|
 | Superpowers version | |
-| Harness (Claude Code, Cursor, etc.) | |
-| Harness version | |
+| OpenCode version | |
 | Your model + version | |
 | All plugins installed | |
 

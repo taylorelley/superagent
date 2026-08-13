@@ -19,9 +19,6 @@ fi
 
 # The OpenCode mapping must not be hand-written anywhere else. A stray bullet
 # list is exactly the drift this test exists to prevent.
-#
-# Scoped to OpenCode's own files: every other harness keeps its own mapping,
-# and docs/README.kimi.md legitimately contains a similar list for Kimi.
 opencode_docs=$(find "$REPO_ROOT/.opencode" -name '*.md'; echo "$REPO_ROOT/docs/README.opencode.md")
 strays=""
 while IFS= read -r doc; do
