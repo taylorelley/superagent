@@ -139,6 +139,15 @@ export const renderBoard = (sessionID) => {
 
   const lines = [
     BOARD_MARKER,
+    // Self-identifying because of where it lands. The snapshot is appended to
+    // the last user message (the transform hook offers nowhere better), so a
+    // model that does not know better reads it as something the human typed.
+    // Observed: a model asked about the board replied that it "is user-supplied
+    // text, not injected context" and declined to use it.
+    'Maintained automatically by the Superagent plugin. Your human partner did',
+    'not write this — it is the live record of subagents you have dispatched in',
+    'this session.',
+    '',
     `Dispatched this session: ${records.length} (${running.length} still running)`,
     '',
     '| Agent | Objective | State | Owns |',

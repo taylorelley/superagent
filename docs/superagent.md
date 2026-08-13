@@ -335,18 +335,76 @@ The hook is triggered with an empty input object from two places:
 from the messages themselves (`info.sessionID`), and anything injected here will
 also be seen by the compaction summarizer.
 
+### Verified against a live OpenCode
+
+Run against `opencode-ai@1.18.17` on Linux, in an isolated `OPENCODE_CONFIG_DIR`.
+
+**The roster registers and is usable.** All ten agents appear in
+`opencode agent list` with the right modes (`superagent` primary, the rest
+subagents), `default_agent` resolves to `superagent`, all three commands
+register, and the plugin loads with no errors. The
+[caching-order bug](https://github.com/code-yeongyu/oh-my-openagent/issues/1320)
+seen in another agent-registering plugin did not reproduce on this version.
+
+**Permissions apply as designed.** Read back from the running instance:
+`implementer` carries `task deny *`; `oracle` carries `edit deny *` and
+`task deny *`; `superagent` carries `edit * deny` followed by the two
+`.superpowers/**` allows, in that order — so its edit tool stays visible but
+confined, which is what the last-matching-rule semantics require.
+
+**A multi-file plugin survives the documented install.** Installing via
+`superpowers@git+https://github.com/…#<branch>` registers all ten agents, so
+`package.json` `main` → entry → relative imports into `.opencode/lib/` resolve
+correctly through OpenCode's plugin installer.
+
+**The opt-out works.** With `{"preset": "solo"}`, `opencode agent list` shows
+only OpenCode's built-ins.
+
+**The collision guard works.** With a user-defined `implementer` in
+`opencode.json`, that agent survives with its own description and prompt, the
+other nine still register, `default_agent` is still set, and the warning names
+`agents.prefix` as the fix.
+
+**The acceptance test passes.** In a clean session:
+
+```
+$ opencode run "Let's make a react todo list"
+> superagent · deepseek-v4-flash-free
+
+→ Skill "brainstorming"
+Using **brainstorming** to explore requirements and design before implementation
+…
+[✓] Explore project context
+[•] Ask clarifying questions (one at a time)
+[ ] Propose 2-3 approaches with trade-offs
+…
+This is a fresh, empty repo … Before I propose a design, a few questions (one at a time).
+```
+
+The orchestrator is the agent running the session, `brainstorming` triggered
+before anything was written, and no code was produced.
+
+**Dispatch and the board work.** A dispatch to `librarian` ran, and a probe
+plugin observing the message array confirmed the routing table is present on
+every turn and a job-board snapshot appears on the root session after a
+dispatch — and does *not* appear on the child session.
+
+That last test also produced a finding. Asked about the board, a model replied
+that it "is user-supplied text, not injected context" and declined to use it —
+because the snapshot is appended to the last user message, which is the only
+place the transform hook offers. The board now identifies itself as
+plugin-maintained in its header. That wording change has not been re-tested
+against a live model.
+
 ### Still unverified
 
-These need a real OpenCode binary and are not settled by source reading:
-
-- Whether a multi-file plugin installed through the documented `git+https` spec
-  resolves its relative imports in every supported Bun version. Node and Bun
-  both resolve a symlinked module to its realpath, and the test harness installs
-  the tree the same way, but that is not the same as a real install.
-- Whether plugin-registered agents appear in `opencode agent list`, which has a
-  [known caching-order bug](https://github.com/code-yeongyu/oh-my-openagent/issues/1320)
-  and a [Windows failure](https://github.com/code-yeongyu/oh-my-openagent/issues/3219)
-  in another plugin that registers agents the same way.
 - Whether multiple `task` calls in a single assistant message run concurrently.
+  This only affects the wording of the degrade advice when background dispatch
+  is off.
 - Whether `@opencode-ai/plugin` (and so zod) is importable from an installed
-  plugin, which gates the optional council tool.
+  plugin. This gates a possible future council *tool*; the shipped
+  command-and-agent implementation does not need it.
+- Behaviour on Windows, where another agent-registering plugin has a
+  [reported failure](https://github.com/code-yeongyu/oh-my-openagent/issues/3219).
+- Model routing with real per-slot models. The live testing ran with every slot
+  inheriting, since the test environment has one usable provider.
