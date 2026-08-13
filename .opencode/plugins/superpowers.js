@@ -1,10 +1,12 @@
 /**
  * Superpowers plugin for OpenCode.ai
  *
- * Two responsibilities at this layer:
+ * Responsibilities at this layer:
  *   1. Register the shared `skills/` directory so OpenCode's native `skill`
  *      tool discovers Superpowers skills without symlinks or config edits.
- *   2. Inject the `using-superpowers` bootstrap into each session.
+ *   2. Register the Superagent specialist roster (see `../lib/roster.js`).
+ *   3. Inject the `using-superpowers` bootstrap, plus the routing table that
+ *      tells the orchestrator which specialists this session actually has.
  *
  * This file stays thin on purpose: it wires hooks and contains no logic.
  * Everything it calls lives in `../lib/`, as pure functions that can be unit
@@ -13,30 +15,49 @@
  * would swallow the error and leave the plugin silently inert.
  */
 
-import { skillsDir } from '../lib/paths.js';
+import { skillsDir, resolveConfigDir } from '../lib/paths.js';
 import { getBootstrapContent, injectBootstrap } from '../lib/bootstrap.js';
-import { guardHook } from '../lib/log.js';
+import { loadConfig } from '../lib/config-schema.js';
+import { registerAgents } from '../lib/agents.js';
+import { renderRoutingTable } from '../lib/routing.js';
+import { backgroundSubagentsAvailable } from '../lib/capabilities.js';
+import { guardHook, debug } from '../lib/log.js';
 
 export const SuperpowersPlugin = async ({ client, directory }) => {
+  const settings = loadConfig({
+    configDir: resolveConfigDir(),
+    projectDir: directory,
+  });
+
+  // Rendered during the config hook, once the roster is known, and then held
+  // for the life of the session. The transform hook fires on every agent step,
+  // so it must not do work.
+  let routingTable = '';
+
   return {
-    /**
-     * Register the skills directory on the live config.
-     *
-     * This works because `Config.get()` returns a cached singleton, so a
-     * mutation here is visible when skills are lazily discovered later.
-     */
     config: guardHook('config hook', async (config) => {
+      if (!config) return;
+
       config.skills = config.skills || {};
       config.skills.paths = config.skills.paths || [];
       if (!config.skills.paths.includes(skillsDir)) {
         config.skills.paths.push(skillsDir);
       }
+
+      const registered = registerAgents(config, settings);
+      if (registered.length) {
+        routingTable = renderRoutingTable(registered, {
+          backgroundAvailable: backgroundSubagentsAvailable(),
+        });
+      }
+      debug(`preset=${settings.preset} agents=${registered.length}`);
     }),
 
     'experimental.chat.messages.transform': guardHook(
       'messages transform',
       async (_input, output) => {
-        injectBootstrap(output.messages, getBootstrapContent(skillsDir));
+        if (settings.bootstrap?.enabled === false) return;
+        injectBootstrap(output?.messages, getBootstrapContent(skillsDir, routingTable));
       }
     ),
   };

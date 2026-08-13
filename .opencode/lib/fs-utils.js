@@ -34,6 +34,98 @@ export const extractAndStripFrontmatter = (content) => {
   return { frontmatter, content: body };
 };
 
+/**
+ * Strip `//` and block comments and trailing commas from JSON.
+ *
+ * OpenCode's own config files accept comments, so Superagent's should too. A
+ * dependency-free stripper has to be string-aware or it mangles any value
+ * containing `//` — a URL, most obviously. This walks the text tracking whether
+ * it is inside a string, which is enough for JSONC.
+ */
+export const stripJsonc = (text) => {
+  let out = '';
+  let inString = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    const next = text[i + 1];
+
+    if (inLineComment) {
+      if (ch === '\n') {
+        inLineComment = false;
+        out += ch;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (ch === '*' && next === '/') {
+        inBlockComment = false;
+        i += 1;
+      }
+      continue;
+    }
+
+    if (inString) {
+      out += ch;
+      // A backslash escapes the next character, including a closing quote.
+      if (ch === '\\') {
+        out += next ?? '';
+        i += 1;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      inLineComment = true;
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      inBlockComment = true;
+      i += 1;
+      continue;
+    }
+
+    out += ch;
+  }
+
+  // Trailing commas, now that comments can no longer hide one.
+  return out.replace(/,(\s*[}\]])/g, '$1');
+};
+
+/** Plain-object test — arrays and null are not merge targets. */
+const isPlainObject = (value) =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * Recursively merge `source` onto `target`, returning a new object.
+ *
+ * Objects merge; arrays and scalars replace. Replacing arrays is deliberate —
+ * a user who lists council members expects their list, not their list appended
+ * to the shipped one.
+ */
+export const deepMerge = (target, source) => {
+  if (!isPlainObject(source)) return source === undefined ? target : source;
+  if (!isPlainObject(target)) return deepMerge({}, source);
+
+  const out = { ...target };
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    out[key] = isPlainObject(value) ? deepMerge(target[key], value) : value;
+  }
+  return out;
+};
+
 /** Trim whitespace, expand a leading `~`, and resolve to an absolute path. */
 export const normalizePath = (p, homeDir) => {
   if (!p || typeof p !== 'string') return null;
