@@ -20,18 +20,18 @@ trap cleanup_test_env EXIT
 # Create same skill "priority-test" in all three locations with different markers
 echo "Setting up priority test fixtures..."
 
-# 1. Create in superpowers location (lowest priority)
-mkdir -p "$SUPERPOWERS_SKILLS_DIR/priority-test"
-cat > "$SUPERPOWERS_SKILLS_DIR/priority-test/SKILL.md" <<'EOF'
+# 1. Create in superagent location (lowest priority)
+mkdir -p "$SUPERAGENT_SKILLS_DIR/priority-test"
+cat > "$SUPERAGENT_SKILLS_DIR/priority-test/SKILL.md" <<'EOF'
 ---
 name: priority-test
-description: Superpowers version of priority test skill
+description: Superagent version of priority test skill
 ---
-# Priority Test Skill (Superpowers Version)
+# Priority Test Skill (Superagent Version)
 
-This is the SUPERPOWERS version of the priority test skill.
+This is the SUPERAGENT version of the priority test skill.
 
-PRIORITY_MARKER_SUPERPOWERS_VERSION
+PRIORITY_MARKER_SUPERAGENT_VERSION
 EOF
 
 # 2. Create in personal location (medium priority)
@@ -68,10 +68,10 @@ echo "  Created priority-test skill in all three locations"
 echo ""
 echo "Test 1: Verifying test fixtures..."
 
-if [ -f "$SUPERPOWERS_SKILLS_DIR/priority-test/SKILL.md" ]; then
-    echo "  [PASS] Superpowers version exists"
+if [ -f "$SUPERAGENT_SKILLS_DIR/priority-test/SKILL.md" ]; then
+    echo "  [PASS] Superagent version exists"
 else
-    echo "  [FAIL] Superpowers version missing"
+    echo "  [FAIL] Superagent version missing"
     exit 1
 fi
 
@@ -169,49 +169,49 @@ describe_priority_result() {
     fi
 }
 
-# Test 2: Document personal vs bundled superpowers priority
+# Test 2: Document personal vs bundled superagent priority
 echo ""
-echo "Test 2: Documenting personal vs superpowers priority..."
+echo "Test 2: Documenting personal vs superagent priority..."
 echo "  Running from outside project directory..."
 
 run_opencode output "$HOME" "Call the skill tool with name \"priority-test\". Show the exact content including any PRIORITY_MARKER text."
 describe_priority_result \
     "$output" \
     "PRIORITY_MARKER_PERSONAL_VERSION" \
-    "PRIORITY_MARKER_SUPERPOWERS_VERSION" \
+    "PRIORITY_MARKER_SUPERAGENT_VERSION" \
     "Personal version loaded for duplicate native skill name" \
-    "Current OpenCode behavior loaded bundled superpowers version instead of personal version"
+    "Current OpenCode behavior loaded bundled superagent version instead of personal version"
 
-# Test 3: Document project vs bundled superpowers priority
+# Test 3: Document project vs bundled superagent priority
 echo ""
-echo "Test 3: Documenting project vs personal/superpowers priority..."
+echo "Test 3: Documenting project vs personal/superagent priority..."
 echo "  Running from project directory..."
 
 run_opencode output "$TEST_HOME/test-project" "Call the skill tool with name \"priority-test\". Show the exact content including any PRIORITY_MARKER text."
 describe_priority_result \
     "$output" \
     "PRIORITY_MARKER_PROJECT_VERSION" \
-    "PRIORITY_MARKER_SUPERPOWERS_VERSION" \
+    "PRIORITY_MARKER_SUPERAGENT_VERSION" \
     "Project version loaded for duplicate native skill name" \
-    "Current OpenCode behavior loaded bundled superpowers version instead of project version"
+    "Current OpenCode behavior loaded bundled superagent version instead of project version"
 
-# Test 4: Test a non-colliding bundled superpowers skill is still available
+# Test 4: Test a non-colliding bundled superagent skill is still available
 echo ""
-echo "Test 4: Testing non-colliding superpowers skill remains available..."
+echo "Test 4: Testing non-colliding superagent skill remains available..."
 
-mkdir -p "$SUPERPOWERS_SKILLS_DIR/superpowers-only-test"
-cat > "$SUPERPOWERS_SKILLS_DIR/superpowers-only-test/SKILL.md" <<'EOF'
+mkdir -p "$SUPERAGENT_SKILLS_DIR/superagent-only-test"
+cat > "$SUPERAGENT_SKILLS_DIR/superagent-only-test/SKILL.md" <<'EOF'
 ---
-name: superpowers-only-test
-description: Superpowers-only priority test skill
+name: superagent-only-test
+description: Superagent-only priority test skill
 ---
-# Superpowers Only Test Skill
+# Superagent Only Test Skill
 
-PRIORITY_MARKER_SUPERPOWERS_ONLY_VERSION
+PRIORITY_MARKER_SUPERAGENT_ONLY_VERSION
 EOF
 
-run_opencode output "$TEST_HOME/test-project" "Call the skill tool with name \"superpowers-only-test\". Show the exact content including any PRIORITY_MARKER text."
-assert_contains "$output" "PRIORITY_MARKER_SUPERPOWERS_ONLY_VERSION" "Non-colliding superpowers skill is still registered"
+run_opencode output "$TEST_HOME/test-project" "Call the skill tool with name \"superagent-only-test\". Show the exact content including any PRIORITY_MARKER text."
+assert_contains "$output" "PRIORITY_MARKER_SUPERAGENT_ONLY_VERSION" "Non-colliding superagent skill is still registered"
 
 echo ""
 echo "=== All priority tests passed ==="

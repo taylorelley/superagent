@@ -1,9 +1,9 @@
 {
-  "name": "superpowers",
+  "name": "superagent",
   "version": "6.3.0",
-  "description": "Superpowers skills and runtime bootstrap for OpenCode",
+  "description": "Superagent skills and runtime bootstrap for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/superpowers.js",
+  "main": ".opencode/plugins/superagent.js",
   "keywords": [
     "opencode",
     "opencode-plugin",

@@ -8,7 +8,7 @@
  * `guard`, which logs loudly and returns a fallback instead.
  */
 
-const PREFIX = '[superpowers/opencode]';
+const PREFIX = '[superagent/opencode]';
 
 const debugEnabled = (env = process.env) =>
   env.SUPERAGENT_DEBUG === '1' || env.SUPERAGENT_DEBUG === 'true';

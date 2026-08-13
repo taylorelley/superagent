@@ -6,9 +6,9 @@
  * `routing.js` renders it into the orchestrator's routing table, so the two can
  * never disagree about which agents exist.
  *
- * Prompt sources are mostly files Superpowers already ships. Those are dispatch
+ * Prompt sources are mostly files Superagent already ships. Those are dispatch
  * templates rather than system prompts, so they go through
- * `prompt-compose.js`. Only roles Superpowers has no existing prompt for get a
+ * `prompt-compose.js`. Only roles Superagent has no existing prompt for get a
  * new file under `.opencode/prompts/`.
  *
  * On permissions: a key is a tool-name pattern, and denying one with pattern
@@ -18,7 +18,7 @@
  * has to keep making.
  *
  * Three roles from oh-my-opencode-slim are deliberately absent. Designer:
- * Superpowers has no UI/UX methodology, and inventing one here would be the
+ * Superagent has no UI/UX methodology, and inventing one here would be the
  * competing-prompt problem this layer exists to avoid. Fixer: it is the
  * implementer resumed through `task_id`, which subagent-driven-development
  * already specifies. Explorer: OpenCode ships a read-only `explore` subagent,
@@ -35,13 +35,13 @@ export const ROSTER = [
     slot: 'orchestrator',
     orchestrator: true,
     description:
-      'Superpowers orchestrator. Plans the work graph and delegates to specialists; does not implement.',
+      'Superagent orchestrator. Plans the work graph and delegates to specialists; does not implement.',
     prompt: { kind: 'file', path: 'prompts/orchestrator.md' },
     // Keeps the edit tool visible but confined: the last matching rule is not
     // pattern "*", so the tool is not hidden, only scoped to the workspace the
     // orchestrator legitimately writes (plans, specs, briefs).
     permission: {
-      edit: { '*': 'deny', '.superpowers/**': 'allow', '**/.superpowers/**': 'allow' },
+      edit: { '*': 'deny', '.superagent/**': 'allow', '**/.superagent/**': 'allow' },
     },
   },
   {

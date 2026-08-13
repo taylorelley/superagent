@@ -1,5 +1,5 @@
 /**
- * Turn Superpowers' subagent dispatch templates into OpenCode agent prompts.
+ * Turn Superagent' subagent dispatch templates into OpenCode agent prompts.
  *
  * Files like `skills/subagent-driven-development/implementer-prompt.md` are not
  * system prompts. They are templates a controller fills in and passes to a
@@ -112,7 +112,7 @@ export const extractDispatchTemplateFile = (filePath) =>
  * It does two jobs. It converts the leftover `[PLACEHOLDER]` slots from a
  * substitution mechanism into a runtime contract — an agent that is missing
  * context it needs says so instead of inventing a path. And it tells the agent
- * to ignore the session bootstrap, which `using-superpowers` itself asks
+ * to ignore the session bootstrap, which `using-superagent` itself asks
  * subagents to do via its `<SUBAGENT-STOP>` block.
  */
 export const AGENT_CONTRACT = `<SUPERAGENT_CONTRACT>

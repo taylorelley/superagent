@@ -32,7 +32,7 @@ of human involvement will be closed without review.
 <!-- 1-3 sentences. What, not why — the "why" belongs above. -->
 
 ## Is this change appropriate for the core library?
-<!-- Superpowers core contains general-purpose skills and infrastructure
+<!-- Superagent core contains general-purpose skills and infrastructure
      that benefit all users. Ask yourself:
 
      - Would this be useful to someone working on a completely different
@@ -69,7 +69,7 @@ of human involvement will be closed without review.
 ## Skill triggering (required if this PR changes skills or the bootstrap)
 
 <!-- Skills are only useful if they auto-trigger. A change that leaves
-     `using-superpowers` uninjected, or that stops `brainstorming` from
+     `using-superagent` uninjected, or that stops `brainstorming` from
      firing, is a regression even when every test still passes.
 
      ACCEPTANCE TEST: Open a clean OpenCode session and send exactly this
@@ -100,7 +100,7 @@ paste the complete transcript here
 
 ## Rigor
 
-- [ ] If this is a skills change: I used `superpowers:writing-skills` and
+- [ ] If this is a skills change: I used `superagent:writing-skills` and
       completed adversarial pressure testing (paste results below)
 - [ ] This change was tested adversarially, not just on the happy path
 - [ ] I did not modify carefully-tuned content (Red Flags table,

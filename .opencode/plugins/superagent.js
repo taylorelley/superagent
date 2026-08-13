@@ -1,11 +1,11 @@
 /**
- * Superpowers plugin for OpenCode.ai
+ * Superagent plugin for OpenCode.ai
  *
  * Responsibilities at this layer:
  *   1. Register the shared `skills/` directory so OpenCode's native `skill`
- *      tool discovers Superpowers skills without symlinks or config edits.
+ *      tool discovers Superagent skills without symlinks or config edits.
  *   2. Register the Superagent specialist roster (see `../lib/roster.js`).
- *   3. Inject the `using-superpowers` bootstrap, plus the routing table that
+ *   3. Inject the `using-superagent` bootstrap, plus the routing table that
  *      tells the orchestrator which specialists this session actually has.
  *
  * This file stays thin on purpose: it wires hooks and contains no logic.
@@ -26,7 +26,7 @@ import { registerCouncillors } from '../lib/council.js';
 import { registerCommands, expandCommand } from '../lib/commands.js';
 import { guardHook, debug } from '../lib/log.js';
 
-export const SuperpowersPlugin = async ({ client, directory }) => {
+export const SuperagentPlugin = async ({ client, directory }) => {
   const configDir = resolveConfigDir();
   const settings = loadConfig({ configDir, projectDir: directory });
 
