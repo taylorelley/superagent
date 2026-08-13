@@ -77,6 +77,7 @@ EOF
   chmod +x "$path"
 }
 
+# make_fixture_repo creates a Git fixture repository containing tracked and untracked shell files, a Markdown file, and changes to the tracked shell files.
 make_fixture_repo() {
   local repo="$1"
 
@@ -111,6 +112,7 @@ EOF
   printf '\necho "changed extensionless"\n' >>"$repo/bin/session-start"
 }
 
+# run_lint_shell runs the shell linter in the specified repository using stub tools and records their invocations in the provided log.
 run_lint_shell() {
   local repo="$1"
   local fakebin="$2"

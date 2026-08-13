@@ -79,6 +79,7 @@ if [[ -n "$IDLE_TIMEOUT_MINUTES" ]]; then
   export BRAINSTORM_IDLE_TIMEOUT_MS=$(( IDLE_TIMEOUT_MINUTES * 60 * 1000 ))
 fi
 
+# is_windows_like_shell determines whether the current shell environment resembles Windows.
 is_windows_like_shell() {
   case "${OSTYPE:-}" in
     msys*|cygwin*|mingw*) return 0 ;;

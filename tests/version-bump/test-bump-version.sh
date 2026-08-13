@@ -16,6 +16,7 @@ fail() {
   exit 1
 }
 
+# make_fixture creates a repository fixture with version-bump configuration and supplied JSON and YAML manifests.
 make_fixture() {
   local repo="$1"
   local yaml_body="$2"
