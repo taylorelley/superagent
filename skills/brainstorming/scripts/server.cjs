@@ -202,7 +202,10 @@ const frameTemplate = fs.readFileSync(path.join(__dirname, 'frame-template.html'
 const helperScript = fs.readFileSync(path.join(__dirname, 'helper.js'), 'utf-8');
 const helperInjection = '<script>\n' + helperScript + '\n</script>';
 
-// ========== Helper Functions ==========
+/**
+ * Reads the Superpowers version from the repository package manifest.
+ * @return {string} The package version, or `'unknown'` when the manifest cannot be read or has no version.
+ */
 
 function readSuperpowersVersion() {
   const manifest = path.join(__dirname, '../../..', 'package.json');
