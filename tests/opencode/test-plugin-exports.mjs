@@ -21,12 +21,12 @@ const REQUIRED_HOOKS = ['config', 'experimental.chat.messages.transform'];
 
 const mod = await import(pathToFileURL(pluginPath).href);
 
-if (typeof mod.SuperpowersPlugin !== 'function') {
-  console.error('FAIL: module does not export a SuperpowersPlugin function');
+if (typeof mod.SuperagentPlugin !== 'function') {
+  console.error('FAIL: module does not export a SuperagentPlugin function');
   process.exit(1);
 }
 
-const plugin = await mod.SuperpowersPlugin({ client: {}, directory: '.' });
+const plugin = await mod.SuperagentPlugin({ client: {}, directory: '.' });
 
 const missing = REQUIRED_HOOKS.filter((hook) => typeof plugin[hook] !== 'function');
 if (missing.length > 0) {

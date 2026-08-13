@@ -1,12 +1,12 @@
 # Superagent — the OpenCode agent team
 
-Superagent is this fork's OpenCode-only layer on top of Superpowers. Superpowers
-supplies the methodology (brainstorm → spec → plan → TDD → review → verify);
-Superagent supplies the execution substrate — a roster of specialist agents,
-each routable to its own model, coordinated by an orchestrator that schedules
-work rather than doing it.
+Superagent is this fork's OpenCode-only agent-team layer, built on top of the
+skills methodology it inherited from [Superpowers](https://github.com/obra/superpowers)
+(brainstorm → spec → plan → TDD → review → verify). This layer supplies the
+execution substrate — a roster of specialist agents, each routable to its own
+model, coordinated by an orchestrator that schedules work rather than doing it.
 
-> **Fork-specific.** This layer lives only in `taylorelley/superpowers`. It is
+> **Fork-specific.** This layer lives only in `taylorelley/superagent`. It is
 > not part of upstream `obra/superpowers` and is not proposed for it.
 >
 > Agent-roster, job-board, and council concepts are adapted from
@@ -17,8 +17,8 @@ work rather than doing it.
 
 ## The roster
 
-Ten agents, registered automatically. Six reuse prompts Superpowers already
-ships; four are new to this layer.
+Ten agents, registered automatically. Six reuse prompts the skills library
+already ships; four are new to this layer.
 
 | Agent | Dispatch it for | Model slot |
 |---|---|---|
@@ -39,7 +39,7 @@ as-is rather than duplicated.
 Every specialist has `task` denied, which removes the tool from it entirely —
 so "you do not dispatch subagents" is structural rather than a request the
 prompt has to keep making. Reviewers and advisors also have `edit` denied. The
-orchestrator can only write under `.superpowers/`.
+orchestrator can only write under `.superagent/`.
 
 ### Names
 
@@ -209,7 +209,7 @@ commands.
 ## Troubleshooting
 
 **The agents don't appear.** Check the plugin loaded at all:
-`opencode run --print-logs "hello" 2>&1 | grep -i superpowers`. Note that
+`opencode run --print-logs "hello" 2>&1 | grep -i superagent`. Note that
 plugin-registered agents surfacing in `opencode agent list` is subject to a
 [known caching-order bug](https://github.com/code-yeongyu/oh-my-openagent/issues/1320)
 in OpenCode; they can work in-session while missing from that listing.
@@ -284,7 +284,7 @@ for becomes structurally guaranteed.
 Rule order matters: `merge` is `flat()` and matching uses `findLast`
 (`index.ts:200,210`), and the plugin's rules are merged after the defaults
 (`agent.ts:293`), so the plugin's rules win. A scoped pair like
-`edit: { "*": "deny", "**/.superpowers/**": "allow" }` keeps the `edit` tool
+`edit: { "*": "deny", "**/.superagent/**": "allow" }` keeps the `edit` tool
 visible while confining it, because the last matching rule is not `pattern: "*"`.
 
 ### `task` has no `model` parameter
@@ -350,11 +350,11 @@ seen in another agent-registering plugin did not reproduce on this version.
 **Permissions apply as designed.** Read back from the running instance:
 `implementer` carries `task deny *`; `oracle` carries `edit deny *` and
 `task deny *`; `superagent` carries `edit * deny` followed by the two
-`.superpowers/**` allows, in that order — so its edit tool stays visible but
+`.superagent/**` allows, in that order — so its edit tool stays visible but
 confined, which is what the last-matching-rule semantics require.
 
 **A multi-file plugin survives the documented install.** Installing via
-`superpowers@git+https://github.com/…#<branch>` registers all ten agents, so
+`superagent@git+https://github.com/…#<branch>` registers all ten agents, so
 `package.json` `main` → entry → relative imports into `.opencode/lib/` resolve
 correctly through OpenCode's plugin installer.
 

@@ -1,4 +1,4 @@
-# Installing Superpowers for OpenCode
+# Installing Superagent for OpenCode
 
 ## Prerequisites
 
@@ -6,32 +6,32 @@
 
 ## Installation
 
-Add superpowers to the `plugin` array in your `opencode.json` (global or project-level):
+Add superagent to the `plugin` array in your `opencode.json` (global or project-level):
 
 ```json
 {
-  "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git"]
+  "plugin": ["superagent@git+https://github.com/taylorelley/superagent.git"]
 }
 ```
 
 Restart OpenCode. The plugin installs through OpenCode's plugin manager and
 registers all skills.
 
-Verify by asking: "Tell me about your superpowers"
+Verify by asking: "What can Superagent do?"
 
 ## Migrating from the old symlink-based install
 
-If you previously installed superpowers using `git clone` and symlinks, remove the old setup:
+If you previously installed superagent using `git clone` and symlinks, remove the old setup:
 
 ```bash
 # Remove old symlinks
-rm -f ~/.config/opencode/plugins/superpowers.js
-rm -rf ~/.config/opencode/skills/superpowers
+rm -f ~/.config/opencode/plugins/superagent.js
+rm -rf ~/.config/opencode/skills/superagent
 
 # Optionally remove the cloned repo
-rm -rf ~/.config/opencode/superpowers
+rm -rf ~/.config/opencode/superagent
 
-# Remove skills.paths from opencode.json if you added one for superpowers
+# Remove skills.paths from opencode.json if you added one for superagent
 ```
 
 Then follow the installation steps above.
@@ -47,16 +47,16 @@ use skill tool to load brainstorming
 
 ## Updating
 
-OpenCode installs Superpowers through a git-backed package spec. Some OpenCode
+OpenCode installs Superagent through a git-backed package spec. Some OpenCode
 and Bun versions pin that resolved git dependency in a lockfile or cache, so a
-restart may not pick up the newest Superpowers commit. If updates do not appear,
+restart may not pick up the newest Superagent commit. If updates do not appear,
 clear OpenCode's package cache or reinstall the plugin.
 
 To follow a branch or tag, append it:
 
 ```json
 {
-  "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git#main"]
+  "plugin": ["superagent@git+https://github.com/taylorelley/superagent.git#main"]
 }
 ```
 
@@ -67,7 +67,7 @@ For a reproducible install, append a full commit SHA instead.
 
 ### Plugin not loading
 
-1. Check logs: `opencode run --print-logs "hello" 2>&1 | grep -i superpowers`
+1. Check logs: `opencode run --print-logs "hello" 2>&1 | grep -i superagent`
 2. Verify the plugin line in your `opencode.json`
 3. Make sure you're running a recent version of OpenCode
 
@@ -80,14 +80,14 @@ the plugin, try installing with system npm and pointing OpenCode at the local
 package:
 
 ```powershell
-npm install superpowers@git+https://github.com/taylorelley/superpowers.git --prefix "$HOME\.config\opencode"
+npm install superagent@git+https://github.com/taylorelley/superagent.git --prefix "$HOME\.config\opencode"
 ```
 
 Then use the installed package path in `opencode.json`:
 
 ```json
 {
-  "plugin": ["~/.config/opencode/node_modules/superpowers"]
+  "plugin": ["~/.config/opencode/node_modules/superagent"]
 }
 ```
 
@@ -116,14 +116,14 @@ Use OpenCode's native `skill` tool to list and load skills.
 
 <!-- END GENERATED TOOL MAP -->
 
-## Superagent
+## The agent-team layer
 
-Superpowers registers a roster of specialist agents on OpenCode — an orchestrator
+Superagent registers a roster of specialist agents on OpenCode — an orchestrator
 that delegates, implementers, reviewers, an oracle, a librarian — each routable
 to its own model. It is on by default.
 
 > **Not in upstream Superpowers.** This layer is specific to
-> `taylorelley/superpowers`; installing `obra/superpowers` gets you the skills
+> `taylorelley/superagent`; installing `obra/superpowers` gets you the skills
 > without it.
 
 For parallel dispatch, start OpenCode with background subagents enabled:
@@ -137,16 +137,16 @@ instead of in the background.
 
 Configure in `~/.config/opencode/superagent.json` or
 `<project>/.opencode/superagent.json`. To turn the whole layer off and get the
-plain Superpowers behaviour back:
+plain skills behaviour back:
 
 ```json
 { "preset": "solo" }
 ```
 
 If your agents do not appear, or a name collides with one of your own, see
-[docs/superagent.md](https://github.com/taylorelley/superpowers/blob/main/docs/superagent.md).
+[docs/superagent.md](https://github.com/taylorelley/superagent/blob/main/docs/superagent.md).
 
 ## Getting Help
 
-- Report issues: https://github.com/taylorelley/superpowers/issues
-- Full documentation: https://github.com/taylorelley/superpowers/blob/main/docs/README.opencode.md
+- Report issues: https://github.com/taylorelley/superagent/issues
+- Full documentation: https://github.com/taylorelley/superagent/blob/main/docs/README.opencode.md

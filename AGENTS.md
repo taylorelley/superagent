@@ -1,8 +1,8 @@
-# Superpowers — Contributor Guidelines
+# Superagent — Contributor Guidelines
 
 ## What This Repo Is
 
-This is an OpenCode-only fork of Superpowers. The plugin, its skills, and its
+This is Superagent, an OpenCode-only fork of Superpowers. The plugin, its skills, and its
 tests target [OpenCode](https://opencode.ai) and nothing else. Support for other
 harnesses — Claude Code, Codex, Cursor, Gemini CLI, Kimi, Hermes, Pi, and the
 rest — has been removed on purpose. Do not add it back, and do not open PRs
@@ -47,7 +47,7 @@ Superpowers on a different agent, use upstream `obra/superpowers`.
 
 ### Third-party dependencies
 
-PRs that add optional or required dependencies on third-party projects will not be accepted. Superpowers is a zero-dependency plugin by design. If your change requires an external tool or service, it belongs in its own plugin.
+PRs that add optional or required dependencies on third-party projects will not be accepted. Superagent is a zero-dependency plugin by design. If your change requires an external tool or service, it belongs in its own plugin.
 
 ### "Compliance" changes to skills
 
@@ -67,7 +67,7 @@ Every PR must solve a real problem that someone actually experienced. "My review
 
 ### Domain-specific skills
 
-Superpowers core contains general-purpose skills that benefit all users regardless of their project. Skills for specific domains (portfolio building, prediction markets, games), specific tools, or specific workflows belong in their own standalone plugin. Ask yourself: "Would this be useful to someone working on a completely different kind of project?" If not, publish it separately.
+Superagent core contains general-purpose skills that benefit all users regardless of their project. Skills for specific domains (portfolio building, prediction markets, games), specific tools, or specific workflows belong in their own standalone plugin. Ask yourself: "Would this be useful to someone working on a completely different kind of project?" If not, publish it separately.
 
 ### Fabricated content
 
@@ -81,13 +81,13 @@ PRs containing multiple unrelated changes will be closed. Split them into separa
 
 Skills are not prose — they are code that shapes agent behavior. If you modify skill content:
 
-- Use `superpowers:writing-skills` to develop and test changes
+- Use `superagent:writing-skills` to develop and test changes
 - Run adversarial pressure testing across multiple sessions
 - Show before/after eval results in your PR
 - Do not modify carefully-tuned content (Red Flags tables, rationalization lists, "human partner" language) without evidence the change is an improvement
 
 Skills must keep triggering through the OpenCode bootstrap. A change that leaves
-`using-superpowers` uninjected, or that stops `brainstorming` from auto-triggering
+`using-superagent` uninjected, or that stops `brainstorming` from auto-triggering
 on "Let's make a react todo list" in a clean OpenCode session, is a regression.
 
 ## Eval harness
@@ -96,12 +96,13 @@ Skill-behavior evals live in [superpowers-evals](https://github.com/prime-radian
 
 ## Understand the Project Before Contributing
 
-Before proposing changes to skill design, workflow philosophy, or architecture, read existing skills and understand the project's design decisions. Superpowers has its own tested philosophy about skill design, agent behavior shaping, and terminology (e.g., "your human partner" is deliberate, not interchangeable with "the user"). Changes that rewrite the project's voice or restructure its approach without understanding why it exists will be rejected.
+Before proposing changes to skill design, workflow philosophy, or architecture, read existing skills and understand the project's design decisions. Superagent has its own tested philosophy about skill design, agent behavior shaping, and terminology (e.g., "your human partner" is deliberate, not interchangeable with "the user"). Changes that rewrite the project's voice or restructure its approach without understanding why it exists will be rejected.
 
-## Superagent
+## The agent-team layer
 
-This fork carries an agent-team layer called Superagent, on top of the plain
-Superpowers skills:
+On top of the skills methodology it inherited from Superpowers, this fork adds
+an agent-team layer: a roster of specialist agents, per-slot model routing, a
+job board, and an optional council.
 
 - `.opencode/lib/` — plugin modules (roster, council, board, routing, commands)
 - `.opencode/prompts/` — agent prompts

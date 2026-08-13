@@ -29,7 +29,7 @@ fs.readFileSync = function (...args) {
 };
 
 const mod = await import(pathToFileURL(pluginPath).href);
-const plugin = await mod.SuperpowersPlugin({ client: {}, directory: '.' });
+const plugin = await mod.SuperagentPlugin({ client: {}, directory: '.' });
 const transform = plugin['experimental.chat.messages.transform'];
 
 const firstOutput = makeOutput(`${scenario} bootstrap first step`);
@@ -69,7 +69,7 @@ if (failures.length > 0) {
 console.log(JSON.stringify(result, null, 2));
 
 function isBootstrapSkillPath(filePath) {
-  return String(filePath).replaceAll('\\', '/').includes('using-superpowers/SKILL.md');
+  return String(filePath).replaceAll('\\', '/').includes('using-superagent/SKILL.md');
 }
 
 function makeOutput(text) {

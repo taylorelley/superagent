@@ -1,6 +1,6 @@
-# Testing Superpowers
+# Testing Superagent
 
-Superpowers has two distinct kinds of tests, each in its own directory:
+Superagent has two distinct kinds of tests, each in its own directory:
 
 - **`tests/`** — does the plugin's non-LLM code work? Bash + node integration tests for the OpenCode plugin, the brainstorm-server JS, and the repo's own scripts.
 - **`evals/`** — do agents behave correctly on real LLM sessions? An external Bun/TypeScript harness driving real agent sessions, with a QA agent and deterministic post-checks judging skill compliance.
@@ -26,7 +26,7 @@ Live in `evals/`, cloned from [superpowers-evals](https://github.com/prime-radia
 ```bash
 cd evals
 bun install
-export SUPERPOWERS_ROOT=/path/to/superpowers
+export SUPERPOWERS_ROOT=/path/to/superagent
 export ANTHROPIC_API_KEY=sk-...
 bun run quorum run scenarios/triggering-test-driven-development --coding-agent opencode
 bun run quorum show <run-dir>

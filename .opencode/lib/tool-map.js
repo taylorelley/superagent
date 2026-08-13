@@ -1,7 +1,7 @@
 /**
  * The single source of truth for the OpenCode tool mapping.
  *
- * Superpowers skills are harness-neutral: they speak in actions ("create a
+ * Superagent skills are harness-neutral: they speak in actions ("create a
  * todo", "dispatch a subagent") rather than tool names. Each harness supplies
  * the translation. This mapping used to be restated in three places — the
  * plugin, `.opencode/INSTALL.md`, and `docs/README.opencode.md` — which meant

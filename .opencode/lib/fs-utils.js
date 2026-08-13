@@ -11,7 +11,7 @@ import path from 'path';
  * Split YAML frontmatter off a markdown document.
  *
  * Deliberately minimal: the bootstrap path must not depend on skills-core or
- * any YAML library, and the only frontmatter Superpowers skills carry is flat
+ * any YAML library, and the only frontmatter Superagent skills carry is flat
  * `key: value` pairs.
  */
 export const extractAndStripFrontmatter = (content) => {

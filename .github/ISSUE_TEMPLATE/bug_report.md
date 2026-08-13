@@ -17,21 +17,21 @@ add a comment or reaction to the existing one instead.
 
 | Field | Value |
 |-------|-------|
-| Superpowers version | |
+| Superagent version | |
 | OpenCode version | |
 | Your model + version | |
 | All plugins installed | |
 | OS + shell | |
 
-## Is this a Superpowers issue or a platform issue?
-<!-- Superpowers is a plugin. Some reported "bugs" are actually issues
+## Is this a Superagent issue or a platform issue?
+<!-- Superagent is a plugin. Some reported "bugs" are actually issues
      in the underlying platform or model. If you're not sure, try
-     reproducing without Superpowers installed.
+     reproducing without Superagent installed.
 
-     If the problem persists without Superpowers, file the issue with
+     If the problem persists without Superagent, file the issue with
      your platform instead. -->
 
-- [ ] I confirmed this issue does not occur without Superpowers installed
+- [ ] I confirmed this issue does not occur without Superagent installed
 
 ## What happened?
 <!-- Be specific. "It doesn't work" is not a bug report. -->

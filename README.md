@@ -1,11 +1,10 @@
-# Superpowers
+# Superagent
 
-Superpowers is a complete software development methodology for [OpenCode](https://opencode.ai), built on top of a set of composable skills and some initial instructions that make sure your agent uses them.
+Superagent is a complete software development methodology for [OpenCode](https://opencode.ai), built on top of a set of composable skills and some initial instructions that make sure your agent uses them.
 
 ## Table of Contents
 
 - [How it works](#how-it-works)
-- [Commercial Services](#commercial-services)
 - [Installation](#installation)
 - [The Basic Workflow](#the-basic-workflow)
 - [Community](#community)
@@ -14,7 +13,6 @@ Superpowers is a complete software development methodology for [OpenCode](https:
 - [Contributing](#contributing)
 - [Updating](#updating)
 - [License](#license)
-- [Visual companion telemetry](#visual-companion-telemetry)
 
 ## How it works
 
@@ -26,20 +24,16 @@ After you've signed off on the design, your agent puts together an implementatio
 
 Next up, once you say "go", it launches a *subagent-driven-development* process, having agents work through each engineering task, inspecting and reviewing their work, and continuing forward. It's not uncommon for your agent to work autonomously for a couple hours at a time without deviating from the plan you put together.
 
-There's a bunch more to it, but that's the core of the system. And because the skills trigger automatically, you don't need to do anything special. OpenCode just has Superpowers.
-
-## Commercial Services
-
-If you're using Superpowers in enterprise and could benefit from commercial support, additional tooling, or managed spending, please don't hesitate to drop us a line at sales@primeradiant.com.
+There's a bunch more to it, but that's the core of the system. And because the skills trigger automatically, you don't need to do anything special. OpenCode just has Superagent.
 
 ## Installation
 
-Superpowers is a plugin for [OpenCode](https://opencode.ai).
+Superagent is a plugin for [OpenCode](https://opencode.ai).
 
 - Tell OpenCode:
 
   ```text
-  Fetch and follow instructions from https://raw.githubusercontent.com/taylorelley/superpowers/refs/heads/main/.opencode/INSTALL.md
+  Fetch and follow instructions from https://raw.githubusercontent.com/taylorelley/superagent/refs/heads/main/.opencode/INSTALL.md
   ```
 
 - Or add it to the `plugin` array in your `opencode.json` (global or
@@ -47,14 +41,14 @@ Superpowers is a plugin for [OpenCode](https://opencode.ai).
 
   ```json
   {
-    "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git"]
+    "plugin": ["superagent@git+https://github.com/taylorelley/superagent.git"]
   }
   ```
 
-- Verify by asking: "Tell me about your superpowers"
+- Verify by asking: "What can Superagent do?"
 - Install and troubleshooting details: [.opencode/INSTALL.md](.opencode/INSTALL.md)
 - Full guide: [docs/README.opencode.md](docs/README.opencode.md)
-- Superpowers also registers a roster of specialist agents on OpenCode — see
+- Superagent also registers a roster of specialist agents on OpenCode — see
   [docs/superagent.md](docs/superagent.md).
 
 
@@ -78,12 +72,12 @@ Superpowers is a plugin for [OpenCode](https://opencode.ai).
 
 ## Community
 
-Superpowers is built by [Jesse Vincent](https://blog.fsck.com) and the rest of the folks at [Prime Radiant](https://primeradiant.com). This OpenCode-only fork is maintained separately.
+Superagent began as [Superpowers](https://github.com/obra/superpowers), built by [Jesse Vincent](https://blog.fsck.com) and the rest of the folks at [Prime Radiant](https://primeradiant.com). This is an OpenCode-only fork, maintained separately from upstream.
 
-- **Issues with this fork**: https://github.com/taylorelley/superpowers/issues
-- **Upstream Superpowers**: https://github.com/obra/superpowers — the multi-harness original
-- **Discord**: [Join us](https://discord.gg/35wsABTejz) for community support, questions, and sharing what you're building with Superpowers
-- **Release announcements**: [Sign up](https://primeradiant.com/superpowers/) to get notified about new versions
+- **Issues with this fork**: https://github.com/taylorelley/superagent/issues
+- **Upstream Superpowers**: https://github.com/obra/superpowers — the multi-harness original this fork diverged from
+- **Discord**: [Join the upstream community](https://discord.gg/35wsABTejz) for general Superpowers support, questions, and discussion
+- **Release notes for this fork**: see [RELEASE-NOTES.md](RELEASE-NOTES.md)
 
 ## What's Inside
 
@@ -109,7 +103,7 @@ Superpowers is built by [Jesse Vincent](https://blog.fsck.com) and the rest of t
 
 **Meta**
 - **writing-skills** - Create new skills following best practices (includes testing methodology)
-- **using-superpowers** - Introduction to the skills system
+- **using-superagent** - Introduction to the skills system
 
 ## Philosophy
 
@@ -122,7 +116,7 @@ Read [the original release announcement](https://blog.fsck.com/2025/10/09/superp
 
 ## Contributing
 
-The general contribution process for Superpowers is below. Keep in mind that we don't generally accept contributions of new skills.
+The general contribution process for Superagent is below. Keep in mind that we don't generally accept contributions of new skills.
 
 1. Fork the repository
 2. Create a branch for your work
@@ -135,7 +129,7 @@ See `skills/writing-skills/SKILL.md` for the complete guide.
 
 ## Updating
 
-OpenCode installs Superpowers through a git-backed package spec, so restarting
+OpenCode installs Superagent through a git-backed package spec, so restarting
 OpenCode usually picks up new commits. Some OpenCode and Bun versions pin the
 resolved git dependency — see
 [.opencode/INSTALL.md](.opencode/INSTALL.md#updating) if updates don't appear.
@@ -143,7 +137,3 @@ resolved git dependency — see
 ## License
 
 MIT License - see LICENSE file for details
-
-## Visual companion telemetry
-
-Because skills and plugins don't provide any feedback to creators, we have no idea how many of you are using Superpowers. By default, the Prime Radiant logo on brainstorming's optional visual companion feature is loaded from our website. It includes the version of Superpowers in use. It does not include any details about your project, prompt, or coding agent. We don't see your clicks or anything about what you're building. This helps us have a rough idea of how many folks are using Superpowers and which version of Superpowers they're using. It's 100% optional. To disable this, set the environment variable `SUPERPOWERS_DISABLE_TELEMETRY` to any true value. Superpowers also honors the generic `DISABLE_TELEMETRY` opt-out.
