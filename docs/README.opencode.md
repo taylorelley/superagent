@@ -84,13 +84,16 @@ and Bun versions pin that resolved git dependency in a lockfile or cache, so a
 restart may not pick up the newest Superpowers commit. If updates do not appear,
 clear OpenCode's package cache or reinstall the plugin.
 
-To pin a specific revision, append a branch, tag, or commit:
+To follow a branch or tag, append it:
 
 ```json
 {
   "plugin": ["superpowers@git+https://github.com/taylorelley/superpowers.git#main"]
 }
 ```
+
+A branch moves, so that selects a line of development rather than pinning one.
+For a reproducible install, append a full commit SHA instead.
 
 ## How It Works
 

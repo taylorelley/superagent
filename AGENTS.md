@@ -92,7 +92,7 @@ on "Let's make a react todo list" in a clean OpenCode session, is a regression.
 
 ## Eval harness
 
-Skill-behavior evals live in [superpowers-evals](https://github.com/prime-radiant-inc/superpowers-evals/), cloned into `evals/` — see `evals/README.md` for setup and for the backends drill can drive. Drill (the harness) runs real agent sessions and judges skill compliance with an LLM verifier. Plugin-infrastructure tests live at `tests/` — see `docs/testing.md`.
+Skill-behavior evals live in [superpowers-evals](https://github.com/prime-radiant-inc/superpowers-evals/), cloned into `evals/` — see `evals/README.md` for setup. `quorum` (the harness) runs real agent sessions and judges skill compliance with a QA agent plus deterministic post-checks; it drives OpenCode via `--coding-agent opencode`. Plugin-infrastructure tests live at `tests/` — see `docs/testing.md`.
 
 ## Understand the Project Before Contributing
 

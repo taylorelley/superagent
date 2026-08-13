@@ -289,6 +289,16 @@ async function main() {
     });
   });
 
+  await test('DISABLE_TELEMETRY=true also omits the remote image on the waiting screen', async () => {
+    const port = 3456;
+    const dir = '/tmp/brainstorm-branding-disable-telemetry-waiting';
+    await withServer({ port, dir, env: { DISABLE_TELEMETRY: 'true' } }, async () => {
+      const html = await fetchHtml(port);
+      assertBrandedFallbackText(html);
+      assert(!html.includes(ASSET_URL), 'generic telemetry opt-out should omit the remote image');
+    });
+  });
+
   console.log(`\n--- Results: ${passed} passed, ${failed} failed ---`);
   if (failed > 0) process.exitCode = 1;
 }
