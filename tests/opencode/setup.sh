@@ -27,9 +27,9 @@ SUPERPOWERS_PLUGIN_FILE="$SUPERPOWERS_DIR/.opencode/plugins/superpowers.js"
 mkdir -p "$SUPERPOWERS_DIR"
 cp -r "$REPO_ROOT/skills" "$SUPERPOWERS_DIR/"
 
-# Install plugin
-mkdir -p "$(dirname "$SUPERPOWERS_PLUGIN_FILE")"
-cp "$REPO_ROOT/.opencode/plugins/superpowers.js" "$SUPERPOWERS_PLUGIN_FILE"
+# Install plugin. The plugin is multi-file (entry + lib/ + prompts/ + config/),
+# so the whole .opencode tree is copied, not just the entry point.
+cp -r "$REPO_ROOT/.opencode" "$SUPERPOWERS_DIR/"
 
 # Register plugin via symlink (what OpenCode actually reads)
 mkdir -p "$OPENCODE_CONFIG_DIR/plugins"
