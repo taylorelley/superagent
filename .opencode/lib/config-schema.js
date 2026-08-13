@@ -153,14 +153,19 @@ const validate = (config) => {
  * `configDir` is OpenCode's user config directory; `projectDir` is the
  * directory OpenCode was opened in.
  */
+export const stateFilePath = (configDir) => path.join(configDir, `${CONFIG_BASENAME}.state.json`);
+
 export const loadConfig = ({ configDir, projectDir, env = process.env } = {}) => {
   const userFile = configDir ? readConfigFile(path.join(configDir, `${CONFIG_BASENAME}.json`)) : null;
   const projectFile = projectDir
     ? readConfigFile(path.join(projectDir, '.opencode', `${CONFIG_BASENAME}.json`))
     : null;
+  // Written by `/preset <name> --persist`. Kept separate from the user's own
+  // file so persisting a choice never rewrites their hand-edited config.
+  const stateFile = configDir ? readConfigFile(stateFilePath(configDir)) : null;
   const envConfig = envOverrides(env);
 
-  const withoutPreset = [userFile, projectFile, envConfig]
+  const withoutPreset = [userFile, projectFile, stateFile, envConfig]
     .filter(Boolean)
     .reduce((acc, layer) => deepMerge(acc, layer), DEFAULTS);
 
@@ -173,7 +178,13 @@ export const loadConfig = ({ configDir, projectDir, env = process.env } = {}) =>
     );
   }
 
-  const resolved = [preset.known ? preset.body : resolvePreset(DEFAULT_PRESET).body, userFile, projectFile, envConfig]
+  const resolved = [
+    preset.known ? preset.body : resolvePreset(DEFAULT_PRESET).body,
+    userFile,
+    projectFile,
+    stateFile,
+    envConfig,
+  ]
     .filter(Boolean)
     .reduce((acc, layer) => deepMerge(acc, layer), DEFAULTS);
 

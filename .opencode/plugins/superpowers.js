@@ -22,18 +22,19 @@ import { registerAgents } from '../lib/agents.js';
 import { renderRoutingTable } from '../lib/routing.js';
 import { backgroundSubagentsAvailable } from '../lib/capabilities.js';
 import { onDispatch, onDispatchResult, onSessionEvent, injectBoard } from '../lib/board.js';
+import { registerCouncillors } from '../lib/council.js';
+import { registerCommands, expandCommand } from '../lib/commands.js';
 import { guardHook, debug } from '../lib/log.js';
 
 export const SuperpowersPlugin = async ({ client, directory }) => {
-  const settings = loadConfig({
-    configDir: resolveConfigDir(),
-    projectDir: directory,
-  });
+  const configDir = resolveConfigDir();
+  const settings = loadConfig({ configDir, projectDir: directory });
 
   // Rendered during the config hook, once the roster is known, and then held
   // for the life of the session. The transform hook fires on every agent step,
   // so it must not do work.
   let routingTable = '';
+  let councillors = [];
 
   return {
     config: guardHook('config hook', async (config) => {
@@ -46,12 +47,28 @@ export const SuperpowersPlugin = async ({ client, directory }) => {
       }
 
       const registered = registerAgents(config, settings);
+      councillors = registerCouncillors(config, settings);
+      registerCommands(config);
       if (registered.length) {
         routingTable = renderRoutingTable(registered, {
           backgroundAvailable: backgroundSubagentsAvailable(),
         });
       }
       debug(`preset=${settings.preset} agents=${registered.length}`);
+    }),
+
+    // Commands expand here rather than in their template, because the
+    // expansion depends on state the template cannot see: the councillors that
+    // were actually registered, the live board, the resolved preset.
+    'command.execute.before': guardHook('command.execute.before', async (input, output) => {
+      const text = expandCommand(input?.command, input?.arguments, {
+        settings,
+        councillors,
+        configDir,
+        sessionID: input?.sessionID,
+      });
+      if (!text || !output) return;
+      output.parts = [{ type: 'text', text }];
     }),
 
     // Record each dispatch and check its file ownership against what is

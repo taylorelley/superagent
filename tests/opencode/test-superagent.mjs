@@ -346,3 +346,124 @@ test('the agent contract tells specialists how to report missing context', () =>
   assert.match(AGENT_CONTRACT, /NEEDS_CONTEXT/);
   assert.match(AGENT_CONTRACT, /SUBAGENT-STOP/);
 });
+
+// --------------------------------------------------------------- council
+
+import { usableMembers, registerCouncillors, councilInstruction } from '../../.opencode/lib/council.js';
+import { registerCommands, expandCommand, COMMANDS } from '../../.opencode/lib/commands.js';
+
+const councilSettings = (members, enabled = true) => {
+  const s = loadConfig({ env: {} });
+  s.council = { enabled, members, minParticipants: 2 };
+  return s;
+};
+
+const TWO = [
+  { name: 'alpha', model: 'p/a', steering: 'correctness' },
+  { name: 'beta', model: 'p/b', steering: 'simplicity' },
+];
+
+test('a council needs at least two members to convene', () => {
+  assert.deepEqual(usableMembers({ enabled: true, members: [TWO[0]] }), []);
+  assert.deepEqual(usableMembers({ enabled: false, members: TWO }), []);
+  assert.equal(usableMembers({ enabled: true, members: TWO }).length, 2);
+});
+
+test('councillors register as sealed subagents with their own models', () => {
+  const config = {};
+  const registered = registerCouncillors(config, councilSettings(TWO));
+
+  assert.equal(registered.length, 2);
+  assert.equal(config.agent['councillor-alpha'].model, 'p/a');
+  assert.equal(config.agent['councillor-beta'].model, 'p/b');
+  for (const name of ['councillor-alpha', 'councillor-beta']) {
+    const agent = config.agent[name];
+    assert.equal(agent.mode, 'subagent');
+    // A councillor that goes off investigating turns a cheap parallel opinion
+    // into an expensive serial one.
+    assert.equal(agent.permission.edit, 'deny');
+    assert.equal(agent.permission.task, 'deny');
+    assert.equal(agent.permission.bash, 'deny');
+    assert.match(agent.prompt, /VERDICT:/);
+    assert.match(agent.prompt, /RISK:/);
+  }
+  assert.match(config.agent['councillor-alpha'].prompt, /correctness/, 'steering should reach the prompt');
+});
+
+test('councillors are not registered when the council is off', () => {
+  const config = {};
+  assert.deepEqual(registerCouncillors(config, councilSettings(TWO, false)), []);
+  assert.deepEqual(config.agent ?? {}, {});
+});
+
+test('the council instruction names every registered councillor', () => {
+  const config = {};
+  const registered = registerCouncillors(config, councilSettings(TWO));
+  const text = councilInstruction(registered, 'Which cache strategy?');
+
+  assert.match(text, /councillor-alpha/);
+  assert.match(text, /councillor-beta/);
+  assert.match(text, /Which cache strategy\?/);
+  assert.match(text, /SINGLE message/);
+  // The failure mode a council exists to prevent.
+  assert.match(text, /Do not present one opinion as a consensus/);
+});
+
+test('an unconfigured council explains itself instead of dispatching', () => {
+  const text = councilInstruction([], 'anything');
+  assert.match(text, /not configured/);
+  assert.match(text, /"members"/);
+  assert.ok(!text.includes('councillor-'), 'must not tell the model to dispatch nonexistent agents');
+});
+
+// -------------------------------------------------------------- commands
+
+test('commands register without clobbering existing ones', () => {
+  const config = { command: { preset: { template: 'MINE' } } };
+  registerCommands(config);
+  assert.equal(config.command.preset.template, 'MINE', "the user's command was replaced");
+  assert.ok(config.command.council, 'other commands should still register');
+  assert.equal(Object.keys(COMMANDS).length, 3);
+});
+
+test('/preset show reports the active preset without claiming a change', () => {
+  const text = expandCommand('preset', '', { settings: loadConfig({ env: {} }) });
+  assert.match(text, /Active preset: \*\*team\*\*/);
+  assert.ok(!/restart/i.test(text), 'showing should not talk about restarting');
+});
+
+test('/preset switching is honest that it needs a restart', () => {
+  const text = expandCommand('preset', 'solo', { settings: loadConfig({ env: {} }) });
+  // Agents are resolved into cached state at startup. Reporting "switched"
+  // without saying this would leave the user believing they are on a model
+  // they are not on.
+  assert.match(text, /does not take effect until OpenCode restarts/);
+});
+
+test('/preset rejects an unknown name and lists the real ones', () => {
+  const text = expandCommand('preset', 'nonsense', { settings: loadConfig({ env: {} }) });
+  assert.match(text, /no preset named "nonsense"/);
+  assert.match(text, /solo/);
+});
+
+test('/preset --persist writes the choice to the state file', () => {
+  withTempDir((dir) => {
+    const text = expandCommand('preset', 'solo --persist', {
+      settings: loadConfig({ env: {} }),
+      configDir: dir,
+    });
+    assert.match(text, /saved/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'superagent.state.json'), 'utf8')).preset, 'solo');
+    // And it must actually be read back on the next load.
+    assert.equal(loadConfig({ configDir: dir, env: {} }).preset, 'solo');
+  });
+});
+
+test('/board reports an empty board rather than nothing', () => {
+  const text = expandCommand('board', '', { settings: loadConfig({ env: {} }), sessionID: 'nope' });
+  assert.match(text, /job board is empty/);
+});
+
+test('an unknown command is left alone', () => {
+  assert.equal(expandCommand('something-else', '', { settings: loadConfig({ env: {} }) }), null);
+});
