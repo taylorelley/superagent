@@ -21,7 +21,14 @@ import { loadConfig } from '../lib/config-schema.js';
 import { registerAgents } from '../lib/agents.js';
 import { renderRoutingTable, renderConflicts } from '../lib/routing.js';
 import { backgroundSubagentsAvailable } from '../lib/capabilities.js';
-import { onDispatch, onDispatchResult, onSessionEvent, injectBoard } from '../lib/board.js';
+import {
+  onDispatch,
+  onDispatchResult,
+  onSessionEvent,
+  injectBoard,
+  boardSnapshots,
+} from '../lib/board.js';
+import { snapshotPath, writeSnapshot } from '../lib/tui-snapshot.js';
 import { registerCouncillors } from '../lib/council.js';
 import { registerCommands, expandCommand } from '../lib/commands.js';
 import { guardHook, debug } from '../lib/log.js';
@@ -35,6 +42,19 @@ export const SuperagentPlugin = async ({ client, directory }) => {
   // so it must not do work.
   let routingTable = '';
   let councillors = [];
+
+  // The sidebar panel runs in the TUI process and cannot see the board's
+  // in-memory ledger, so each change is projected to a file it polls. Resolved
+  // once: neither the config directory nor the project directory moves.
+  const snapshotFile =
+    settings.tui?.enabled === false || settings.board?.enabled === false
+      ? null
+      : snapshotPath(configDir, directory);
+
+  const publishBoard = () => {
+    if (!snapshotFile) return;
+    writeSnapshot(snapshotFile, { directory, sessions: boardSnapshots() });
+  };
 
   return {
     config: guardHook('config hook', async (config) => {
@@ -85,18 +105,24 @@ export const SuperagentPlugin = async ({ client, directory }) => {
     'tool.execute.before': guardHook('tool.execute.before', async (input, output) => {
       if (input?.tool !== 'task') return;
       onDispatch(input.sessionID, input.callID, output?.args, settings);
+      publishBoard();
     }),
 
     'tool.execute.after': guardHook('tool.execute.after', async (input, output) => {
       if (input?.tool !== 'task') return;
       onDispatchResult(input.sessionID, input.callID, output, settings);
+      publishBoard();
     }),
 
     // Background dispatches return as soon as the job starts, so their outcome
     // arrives as a session lifecycle event on the child.
     event: guardHook('event', async ({ event } = {}) => {
       if (!event?.type) return;
-      onSessionEvent(event.type, event.properties?.sessionID ?? event.properties?.info?.id);
+      const changed = onSessionEvent(
+        event.type,
+        event.properties?.sessionID ?? event.properties?.info?.id
+      );
+      if (changed) publishBoard();
     }),
 
     'experimental.chat.messages.transform': guardHook(

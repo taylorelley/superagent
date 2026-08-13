@@ -100,6 +100,17 @@ export const DEFAULTS = {
   },
 
   bootstrap: { enabled: true },
+
+  tui: {
+    /**
+     * Render the Superagent panel into OpenCode's TUI sidebar.
+     *
+     * The panel is a second entry point (`exports["./tui"]`) that OpenCode
+     * loads from `tui.json` rather than `opencode.json`, so this setting only
+     * does anything for a user who registered it there. See docs/superagent.md.
+     */
+    enabled: true,
+  },
 };
 
 const VALID = {
@@ -139,6 +150,7 @@ export const envOverrides = (env = process.env) => {
   if (env.SUPERAGENT_DISABLE === '1' || env.SUPERAGENT_DISABLE === 'true') {
     out.agents = { enabled: false };
     out.board = { enabled: false };
+    out.tui = { enabled: false };
   }
   return out;
 };
@@ -156,7 +168,7 @@ const isObject = (value) => value !== null && typeof value === 'object' && !Arra
  * that is valid JSON must never be able to do that.
  */
 const validate = (config) => {
-  for (const section of ['agents', 'council', 'board', 'bootstrap']) {
+  for (const section of ['agents', 'council', 'board', 'bootstrap', 'tui']) {
     if (!isObject(config[section])) {
       if (config[section] !== undefined) {
         warn(`${section}: expected an object, ignoring and using defaults`);

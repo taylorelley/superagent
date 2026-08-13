@@ -15,6 +15,7 @@ import {
   onSessionEvent,
   renderBoard,
   injectBoard,
+  boardSnapshots,
   resetBoards,
   BOARD_MARKER,
 } from '../../.opencode/lib/board.js';
@@ -241,4 +242,87 @@ test('injection tolerates malformed message arrays', () => {
   assert.equal(injectBoard(null, s), false);
   assert.equal(injectBoard([], s), false);
   assert.equal(injectBoard([{ info: {} }], s), false);
+});
+
+// ------------------------------------------------------------- tui snapshot
+
+test('boardSnapshots projects the ledger as plain data for the panel', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch(
+    'root',
+    'c1',
+    {
+      subagent_type: 'implementer',
+      description: 'Add the tests',
+      background: true,
+      prompt: 'work\n<!-- superagent-ownership: write=src/api/** -->\n',
+    },
+    s
+  );
+
+  const snapshots = boardSnapshots();
+  assert.deepEqual(Object.keys(snapshots), ['root']);
+  assert.deepEqual(snapshots.root.records, [
+    {
+      agent: 'implementer',
+      objective: 'Add the tests',
+      state: 'running',
+      background: true,
+      owns: ['src/api/**'],
+      startedAt: snapshots.root.records[0].startedAt,
+    },
+  ]);
+  assert.equal(typeof snapshots.root.updatedAt, 'number');
+});
+
+test('boardSnapshots and the rendered board agree about state', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { subagent_type: 'oracle', description: 'Ask' }, s);
+  onDispatchResult('root', 'c1', { output: 'answered' }, s);
+
+  const record = boardSnapshots().root.records[0];
+  assert.equal(record.state, 'completed');
+  assert.ok(record.endedAt >= record.startedAt);
+  assert.match(renderBoard('root'), /completed/);
+});
+
+test('boardSnapshots covers every session, since the panel picks one later', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root-a', 'c1', { subagent_type: 'implementer', description: 'A' }, s);
+  onDispatch('root-b', 'c2', { subagent_type: 'librarian', description: 'B' }, s);
+
+  assert.deepEqual(Object.keys(boardSnapshots()).sort(), ['root-a', 'root-b']);
+});
+
+test('a deleted session leaves the snapshot, as it leaves the board', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'A' }, s);
+  onSessionEvent('session.deleted', 'root');
+
+  assert.deepEqual(boardSnapshots(), {});
+});
+
+test('an unchanged board reports the same updatedAt, so the panel is not woken', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'A' }, s);
+
+  const first = JSON.stringify(boardSnapshots());
+  assert.equal(JSON.stringify(boardSnapshots()), first, 'a wall clock leaked into the projection');
+});
+
+test('onSessionEvent reports whether it changed anything', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'A' }, s);
+  onDispatchResult('root', 'c1', { metadata: { background: true, jobId: 'child' } }, s);
+
+  assert.equal(onSessionEvent('message.updated', 'child'), false, 'not a lifecycle event');
+  assert.equal(onSessionEvent('session.idle', 'unknown-child'), false, 'nobody was waiting on it');
+  assert.equal(onSessionEvent('session.idle', 'child'), true);
+  assert.equal(onSessionEvent('session.idle', 'child'), false, 'it had already settled');
 });
