@@ -8,6 +8,7 @@ Superagent is a complete software development methodology for [OpenCode](https:/
 - [Installation](#installation)
 - [The Basic Workflow](#the-basic-workflow)
 - [Community](#community)
+- [How Superagent Differs from Superpowers](#how-superagent-differs-from-superpowers)
 - [What's Inside](#whats-inside)
 - [Philosophy](#philosophy)
 - [Contributing](#contributing)
@@ -78,6 +79,70 @@ Superagent began as [Superpowers](https://github.com/obra/superpowers), built by
 - **Upstream Superpowers**: https://github.com/obra/superpowers — the multi-harness original this fork diverged from
 - **Discord**: [Join the upstream community](https://discord.gg/35wsABTejz) for general Superpowers support, questions, and discussion
 - **Release notes for this fork**: see [RELEASE-NOTES.md](RELEASE-NOTES.md)
+
+## How Superagent Differs from Superpowers
+
+Superagent isn't just a rename. It's a fork that made two deliberate bets:
+narrow the platform target down to one, and use the room that frees up to
+build something upstream doesn't have.
+
+**OpenCode-only, on purpose.** Upstream Superpowers targets many coding
+agents — Claude Code, Codex, Cursor, Devin, Gemini CLI, Hermes, Kimi, Pi.
+Superagent dropped all of that. Less surface area means less compatibility
+code bending the skills to fit the lowest common denominator across
+harnesses, and it means claims about plugin behavior can be verified against
+OpenCode's actual source instead of assumed. See
+[docs/superagent.md](docs/superagent.md#verified-behaviour-of-the-opencode-plugin-api)
+for an example of what that buys: config-merge order, permission semantics,
+and background-dispatch behavior read directly out of `sst/opencode`'s
+source and tested against a live install, not inferred from docs.
+
+**A new agent-team layer upstream doesn't have.** Superagent registers ten
+specialist agents — orchestrator, implementer, implementer-deep,
+task-reviewer, re-reviewer, code-reviewer, spec-reviewer, plan-reviewer,
+oracle, librarian — each independently routable to its own model. This
+matters because OpenCode's `task` tool has no per-call model parameter, so
+per-role routing is otherwise impossible. In practice, it means you can run
+cheap, fast models for grunt work (research, routine implementation) and
+reserve stronger models for judgment calls (architecture, deep review),
+instead of paying premium-model rates for every step.
+
+**The job board closes a real gap in parallel dispatch.** Upstream's
+`subagent-driven-development` skill already dispatches subagents in
+parallel, but nothing upstream prevents two of them from writing the same
+file — one succeeds, the other silently loses its work. Superagent's job
+board has each dispatch declare a file-ownership claim and flags overlapping
+claims before they collide, turning that silent failure into a visible
+warning.
+
+**The council adds optional cross-model verification.** For decisions that
+are expensive to get wrong, `/council <question>` asks several distinct
+models the same question in parallel and reports where they agree or
+disagree — surfacing blind spots that asking a single model would miss
+without any indication it happened.
+
+**Permissions enforce the rules instead of just asking for them.**
+Specialist agents have the `task` tool (and, for reviewers and advisors, the
+`edit` tool) denied at the permission layer. "Don't dispatch further
+subagents" is structurally guaranteed rather than a prompt instruction a
+model could drift from under pressure.
+
+**Nothing is lost — it's opt-in.** Setting `{"preset": "solo"}` turns the
+whole agent-team layer off and reproduces the original single-agent
+Superpowers workflow exactly. The roster, job board, and council are
+additions layered on top, not a replacement you're forced into.
+
+**Rebrand and a privacy fix, in the same pass.** Superagent renamed the
+project throughout — package name, plugin entry point, env vars, skill
+paths — and, while doing so, removed the brainstorming skill's telemetry
+beacon that used to fetch a version-tagged image from `primeradiant.com` on
+every session. The fork no longer phones home by default.
+
+Together, these changes trade breadth (many harnesses, shallow support) for
+depth (one harness, verified behavior, and a coordination layer that makes
+multi-agent work safer and cheaper to run). Full technical detail — config
+schema, model-routing examples, troubleshooting — lives in
+[docs/superagent.md](docs/superagent.md).
 
 ## What's Inside
 
