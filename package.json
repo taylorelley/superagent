@@ -1,13 +1,19 @@
 {
   "name": "superagent",
-  "version": "6.3.0",
+  "version": "0.1.0",
   "description": "Superagent skills and runtime bootstrap for OpenCode",
   "type": "module",
   "main": ".opencode/plugins/superagent.js",
   "exports": {
-    ".": { "import": "./.opencode/plugins/superagent.js" },
-    "./server": { "import": "./.opencode/plugins/superagent.js" },
-    "./tui": { "import": "./.opencode/tui/superagent-tui.js" }
+    ".": {
+      "import": "./.opencode/plugins/superagent.js"
+    },
+    "./server": {
+      "import": "./.opencode/plugins/superagent.js"
+    },
+    "./tui": {
+      "import": "./.opencode/tui/superagent-tui.js"
+    }
   },
   "keywords": [
     "opencode",

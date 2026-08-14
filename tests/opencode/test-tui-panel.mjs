@@ -78,14 +78,14 @@ const dispatch = (over = {}) => ({
 test('the identity line reports version, preset, and which subsystems are on', () => {
   const text = lines(
     render({
-      version: '6.3.0',
+      version: '0.1.0',
       preset: 'team',
       subsystems: { agents: true, board: false, council: true },
     })
   );
 
   assert.ok(text.includes('Superagent'));
-  assert.ok(text.includes('v6.3.0'));
+  assert.ok(text.includes('v0.1.0'));
   assert.ok(
     text.some((line) => line.includes('team') && line.includes('agents on') && line.includes('board off')),
     `expected a subsystem summary, got ${JSON.stringify(text)}`
