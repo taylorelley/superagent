@@ -86,7 +86,11 @@ test('elementFactory drives the imperative API and skips empty children', () => 
 
 test('the element factory degrades to nothing when OpenTUI cannot be reached', async () => {
   assert.equal(await loadElementFactory(['node:nonexistent-opentui']), null);
-  assert.equal(await loadElementFactory(['node:fs']), null, 'a module without createElement is not one');
+  assert.equal(
+    await loadElementFactory(['node:fs']),
+    null,
+    'a module without createElement is not one',
+  );
 });
 
 // ---------------------------------------------------------------- version
@@ -106,9 +110,12 @@ test('the panel roster mirrors what the plugin would register', () => {
   const agents = panelAgents(settings(), null);
   assert.deepEqual(
     agents.map((a) => a.name),
-    ROSTER.map((entry) => entry.key)
+    ROSTER.map((entry) => entry.key),
   );
-  assert.ok(agents.every((a) => a.model === null), 'nothing is routed by default');
+  assert.ok(
+    agents.every((a) => a.model === null),
+    'nothing is routed by default',
+  );
 });
 
 test('the panel roster honours prefix, disable, and model routing', () => {
@@ -123,7 +130,7 @@ test('the panel roster honours prefix, disable, and model routing', () => {
         models: { ...base.agents.models, orchestrator: 'anthropic/claude-opus-4-1' },
       },
     },
-    null
+    null,
   );
 
   assert.ok(agents.every((a) => a.name.startsWith('sa-')));
@@ -138,7 +145,10 @@ test('agents disabled entirely means an empty roster', () => {
 
 test('an agent missing from the resolved config is not claimed as registered', () => {
   const agents = panelAgents(settings(), { agent: { oracle: {}, librarian: {} } });
-  assert.deepEqual(agents.map((a) => a.name), ['oracle', 'librarian']);
+  assert.deepEqual(
+    agents.map((a) => a.name),
+    ['oracle', 'librarian'],
+  );
 });
 
 // ---------------------------------------------------------------- session
@@ -161,16 +171,23 @@ test('newestSessionID has nothing to pick from an empty snapshot', () => {
 
 test('dispatchState distinguishes no file, incompatible, mismatch, and ok', () => {
   assert.equal(dispatchState({ hasFile: false, snapshot: null, panelVersion: '0.1.0' }), 'none');
-  assert.equal(dispatchState({ hasFile: true, snapshot: null, panelVersion: '0.1.0' }), 'incompatible');
+  assert.equal(
+    dispatchState({ hasFile: true, snapshot: null, panelVersion: '0.1.0' }),
+    'incompatible',
+  );
   assert.equal(
     dispatchState({ hasFile: true, snapshot: { pluginVersion: '0.1.0' }, panelVersion: '0.2.0' }),
-    'version-mismatch'
+    'version-mismatch',
   );
   assert.equal(
     dispatchState({ hasFile: true, snapshot: { pluginVersion: '0.1.0' }, panelVersion: '0.1.0' }),
-    'ok'
+    'ok',
   );
-  assert.equal(dispatchState({ hasFile: true, snapshot: {}, panelVersion: '0.1.0' }), 'ok', 'no server version means no comparison');
+  assert.equal(
+    dispatchState({ hasFile: true, snapshot: {}, panelVersion: '0.1.0' }),
+    'ok',
+    'no server version means no comparison',
+  );
 });
 
 // ------------------------------------------------------------ registration

@@ -81,14 +81,16 @@ test('the identity line reports version, preset, and which subsystems are on', (
       version: '0.1.0',
       preset: 'team',
       subsystems: { agents: true, board: false, council: true },
-    })
+    }),
   );
 
   assert.ok(text.includes('Superagent'));
   assert.ok(text.includes('v0.1.0'));
   assert.ok(
-    text.some((line) => line.includes('team') && line.includes('agents on') && line.includes('board off')),
-    `expected a subsystem summary, got ${JSON.stringify(text)}`
+    text.some(
+      (line) => line.includes('team') && line.includes('agents on') && line.includes('board off'),
+    ),
+    `expected a subsystem summary, got ${JSON.stringify(text)}`,
   );
   assert.ok(text.some((line) => line.includes('council on')));
 });
@@ -114,12 +116,30 @@ test('agents are collapsed by default: header count plus routed slots only', () 
         { name: 'implementer', model: null },
         { name: 'oracle', model: 'anthropic/claude-opus-4-1' },
       ],
-    })
+    }),
   );
 
   assert.ok(text.includes('oracle'), 'the routed slot is the exception worth showing');
   assert.ok(!text.includes('implementer'), 'an inheriting slot is hidden when collapsed');
-  assert.ok(text.some((line) => line.includes('1 collapsed')), 'the hidden count is stated');
+  assert.ok(
+    text.some((line) => line.includes('1 collapsed')),
+    'the hidden count is stated',
+  );
+});
+
+test('collapsed mode is capped too: routed slots past the budget count as hidden', () => {
+  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
+    name: `agent-${i}`,
+    model: 'anthropic/claude-opus-4-1',
+  }));
+  const text = lines(render({ agents }));
+
+  assert.equal(
+    text.filter((line) => line.includes('agent-')).length,
+    MAX_AGENT_ROWS,
+    'a fully-routed roster must not outgrow the sidebar just because it is collapsed',
+  );
+  assert.ok(text.some((line) => line.includes('3 collapsed')));
 });
 
 test('expanding via config shows the full roster, capped as before', () => {
@@ -138,7 +158,9 @@ test('an empty roster still says none registered, collapsed or not', () => {
 });
 
 test('an unrouted slot says it inherits rather than showing nothing', () => {
-  const text = lines(render({ agents: [{ name: 'implementer', model: null }], agentsExpanded: true }));
+  const text = lines(
+    render({ agents: [{ name: 'implementer', model: null }], agentsExpanded: true }),
+  );
   assert.ok(text.includes('implementer'));
   assert.ok(text.includes('inherit'));
 });
@@ -151,7 +173,7 @@ test('routed agents sort first and lose their provider prefix', () => {
         { name: 'implementer', model: null },
         { name: 'oracle', model: 'anthropic/claude-opus-4-1' },
       ],
-    })
+    }),
   );
 
   assert.ok(text.indexOf('oracle') < text.indexOf('implementer'), 'the routed slot leads');
@@ -190,14 +212,14 @@ test('an incompatible snapshot is named as such', () => {
 });
 
 test('a server/panel version mismatch names both versions', () => {
-  const text = lines(render({ snapshotState: 'version-mismatch', pluginVersion: '6.3.0', version: '0.1.0' }));
+  const text = lines(
+    render({ snapshotState: 'version-mismatch', pluginVersion: '6.3.0', version: '0.1.0' }),
+  );
   assert.ok(text.some((line) => line.includes('6.3.0') && line.includes('0.1.0')));
 });
 
 test('the dispatch header counts what is running against the total', () => {
-  const text = lines(
-    render({ records: [dispatch({ state: 'running' }), dispatch(), dispatch()] })
-  );
+  const text = lines(render({ records: [dispatch({ state: 'running' }), dispatch(), dispatch()] }));
   assert.ok(text.includes('2/3') || text.includes('1/3'), JSON.stringify(text));
   assert.ok(text.includes('1/3'), 'one of three is running');
 });
@@ -210,7 +232,7 @@ test('running dispatches come first, then the most recently finished', () => {
         dispatch({ agent: 'recent', endedAt: 90 }),
         dispatch({ agent: 'live', state: 'running', endedAt: undefined, startedAt: 5 }),
       ],
-    })
+    }),
   );
 
   // Rows are prefixed with a state glyph, so match on a substring.
@@ -231,7 +253,7 @@ test('a running dispatch shows its objective and what it owns; a finished one do
         }),
         dispatch({ agent: 'done', objective: 'earlier work', owns: ['src/other/**'] }),
       ],
-    })
+    }),
   );
 
   assert.ok(text.some((line) => line.includes('rewrite the parser')));
@@ -251,27 +273,33 @@ test('long detail lines are truncated to the column, not wrapped', () => {
       records: [
         dispatch({ state: 'running', objective: 'x'.repeat(200), owns: ['y'.repeat(200)] }),
       ],
-    })
+    }),
   );
 
   const objective = text.find((entry) => entry.includes('xxx'));
   assert.ok(objective, 'the objective is shown');
   assert.ok(
     objective.trim().length <= OBJECTIVE_MAX,
-    `objective line was ${objective.trim().length} characters`
+    `objective line was ${objective.trim().length} characters`,
   );
   assert.ok(objective.includes('…'));
 
   const owns = text.find((entry) => entry.includes('yyy'));
   assert.ok(
     owns.trim().length <= OBJECTIVE_MAX,
-    `owns line was ${owns.trim().length} characters, and its label counts too`
+    `owns line was ${owns.trim().length} characters, and its label counts too`,
   );
 });
 
 test('dispatch states carry a glyph so outcome reads without scanning colours', () => {
   const text = lines(
-    render({ records: [dispatch({ state: 'running' }), dispatch({ state: 'completed' }), dispatch({ state: 'error' })] })
+    render({
+      records: [
+        dispatch({ state: 'running' }),
+        dispatch({ state: 'completed' }),
+        dispatch({ state: 'error' }),
+      ],
+    }),
   );
   assert.ok(text.some((line) => line.includes('●')));
   assert.ok(text.some((line) => line.includes('✓')));
@@ -280,7 +308,7 @@ test('dispatch states carry a glyph so outcome reads without scanning colours', 
 
 test('a busy session is capped and says how much it is hiding', () => {
   const records = Array.from({ length: MAX_DISPATCH_ROWS + 4 }, (_, i) =>
-    dispatch({ agent: `agent-${i}`, endedAt: i })
+    dispatch({ agent: `agent-${i}`, endedAt: i }),
   );
   const text = lines(render({ records }));
 
@@ -296,7 +324,7 @@ test('dispatch state is coloured by outcome, so a failure is not just more text'
         dispatch({ state: 'error' }),
         dispatch({ state: 'completed' }),
       ],
-    })
+    }),
   );
 
   assert.ok(used.includes('info'), 'running');
@@ -308,6 +336,12 @@ test('an unknown state still renders, in a neutral colour', () => {
   const tree = render({ records: [dispatch({ state: 'something-new' })] });
   assert.ok(lines(tree).includes('something-new'));
   assert.ok(colors(tree).every((color) => Object.values(THEME).includes(color)));
+});
+
+test('a record missing state renders "unknown", not the literal word undefined', () => {
+  const tree = render({ records: [dispatch({ state: undefined })] });
+  assert.ok(lines(tree).includes('unknown'));
+  assert.ok(!lines(tree).some((line) => line.includes('undefined')));
 });
 
 // --------------------------------------------------------------------- theme

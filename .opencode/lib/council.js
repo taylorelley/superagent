@@ -52,7 +52,7 @@ export const usableMembers = (council) => {
   if (new Set(models).size < 2) {
     warn(
       'council members do not have distinct models. Councillors on the same model ' +
-        'produce the same answer, so the result will be agreement by construction, not consensus.'
+        'produce the same answer, so the result will be agreement by construction, not consensus.',
     );
   }
   return members;
@@ -144,7 +144,7 @@ export const councilInstruction = (councillors, question) => {
     '<SUPERAGENT_COUNCIL>',
     'Convene the council on this question:',
     '',
-    question || '(the question is the user\'s previous message)',
+    question || "(the question is the user's previous message)",
     '',
     `Dispatch all ${councillors.length} councillors in a SINGLE message, as parallel`,
     '`task` calls, each with the identical question:',

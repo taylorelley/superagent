@@ -8,11 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import {
-  renderDocToolMap,
-  DOC_MARKER_BEGIN,
-  DOC_MARKER_END,
-} from '../.opencode/lib/tool-map.js';
+import { renderDocToolMap, DOC_MARKER_BEGIN, DOC_MARKER_END } from '../.opencode/lib/tool-map.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 

@@ -1,0 +1,108 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    name: Plugin tests (tests/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Belt-and-suspenders: don't rely on the runner image happening to
+      # ship a jq new enough for strenv() or a graphviz new enough for the
+      # writing-skills fixture, since both tests fail confusingly otherwise.
+      - name: Install test-only system tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq graphviz
+
+      - name: OpenCode plugin tests
+        run: bash tests/opencode/run-tests.sh
+
+      - name: Shell lint self-tests
+        run: bash tests/shell-lint/test-lint-shell.sh
+
+      - name: Version-bump script tests
+        run: bash tests/version-bump/test-bump-version.sh
+
+      - name: systematic-debugging find-polluter tests
+        run: bash tests/systematic-debugging/test-find-polluter.sh
+
+      - name: writing-skills graph renderer tests
+        run: bash tests/writing-skills/test-render-graphs.sh
+
+      - name: brainstorm-server tests
+        run: |
+          npm --prefix tests/brainstorm-server install
+          npm --prefix tests/brainstorm-server test
+
+  lint:
+    name: Code quality (shellcheck, JS syntax)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+
+      # This is the repo's real lint gate (shellcheck + `bash -n`/`sh -n`
+      # syntax checks over every tracked shell file) — distinct from the
+      # "Shell lint self-tests" job above, which only exercises
+      # lint-shell.sh's own argument-parsing and file-selection logic
+      # against stub tools and never actually lints a real script.
+      - name: Shellcheck the repo's shell scripts
+        run: bash scripts/lint-shell.sh --all
+
+      # Zero-dependency syntax sanity for every tracked JS/MJS/CJS file.
+      # `node --test` already parses whatever it imports, so this exists to
+      # catch a syntax error in a module that happens not to be reachable
+      # from any test today. Cheap and dependency-free, so it stays even
+      # though ESLint below is a strict superset of it.
+      - name: Syntax-check JS files
+        run: |
+          status=0
+          while IFS= read -r -d '' file; do
+            node --check "$file" || status=1
+          done < <(git ls-files -z '*.js' '*.mjs' '*.cjs')
+          exit "$status"
+
+      - run: npm ci
+
+      # eslint.config.js models this repo's real module boundaries (root
+      # ESM, tests/brainstorm-server's own CommonJS package.json, the
+      # browser-served helper.js) instead of one blanket ruleset, and
+      # allows the empty-catch "best effort" idiom this codebase uses
+      # deliberately and repeatedly rather than demanding a placeholder
+      # comment at every call site. Verified clean against the full tree
+      # before being wired in here.
+      - name: ESLint
+        run: npm run lint
+
+      # .prettierrc.json pins singleQuote (the codebase's existing
+      # convention; Prettier's own default is double quotes, which would
+      # have touched every string in the tree) and a 100-column printWidth
+      # (over half the tracked lines already exceed 80). The whole tree was
+      # reformatted to this config before the check was wired in, so this
+      # is enforcing the project's actual style, not aspiring to one.
+      - name: Prettier format check
+        run: npm run format:check
+
+      # Deliberately not run here: shfmt formatting for shell scripts.
+      # scripts/lint-shell.sh's own --format flag is opt-in (it rewrites
+      # files), and several tracked scripts predate shfmt's default style —
+      # enforcing it in CI would fail on files unrelated to whatever a PR
+      # actually changed, stricter than the project's own convention. A
+      # static security scanner (e.g. opengrep/semgrep) is also not
+      # included: used ad hoc by past contributors per commit history, but
+      # no config or verified-clean baseline exists in-repo to wire into CI
+      # safely yet.

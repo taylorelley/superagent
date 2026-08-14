@@ -5,6 +5,45 @@
 First versioned release of the OpenCode-only fork. Version numbering restarts
 from upstream's 6.3.0: this is a fork of Superpowers, not a continuation of it.
 
+### Subagent-Driven Development
+
+- **Parallel Waves.** When a plan's Task Order & Dependencies table exposes a
+  wave of independent tasks (size ≥ 2) and
+  `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` is set, the controller
+  dispatches the wave concurrently instead of one task at a time: each task
+  gets its own git worktree and branch off the wave's base, implementers run
+  in the background, and the controller merges each task back with `--no-ff`
+  as its review clears. Disjoint `Files:` blocks are verified before dispatch
+  — an overlap is treated as a plan defect (serialize the pair, or merge them
+  into one task) rather than silently risking a lost write. Falls back to the
+  existing serial loop when any gating condition doesn't hold, or when
+  worktree creation fails.
+- `writing-plans` gained the wave-computation rule the controller uses to
+  derive waves from the dependency table, and `using-git-worktrees` documents
+  the per-task worktree pattern the controller follows.
+
+### TUI
+
+- **Dispatch state at a glance.** The sidebar panel now shows a glyph and
+  color per dispatch (running/completed/error/cancelled) instead of a bare
+  list.
+- **Agents collapse by default.** Only routed slots (an explicit model pin)
+  show in the default view, with a `+N collapsed` count for the rest; the
+  full roster is available by expanding.
+- **Version-skew detection.** The panel now distinguishes "no snapshot yet",
+  "snapshot from an incompatible plugin version", and "server/panel version
+  mismatch" instead of collapsing all three into an empty dispatch list.
+
+### Fixes (post-release hardening)
+
+- The collapsed agent view is now capped at the same row budget as the
+  expanded view, so a preset routing more than a handful of agents to
+  explicit models can no longer overflow the sidebar.
+- A snapshot whose server-side version couldn't be read no longer silently
+  passes the version-skew check without a trace.
+- A dispatch record missing `state` renders `unknown` instead of the literal
+  string `undefined`.
+
 ## v6.3.0 (2026-08-12)
 
 ### Harness Support

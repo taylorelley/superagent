@@ -70,7 +70,7 @@ const resolveModel = (slot, models, availableModels) => {
   if (availableModels && availableModels.size && !availableModels.has(configured)) {
     warn(
       `model "${configured}" for slot "${slot}" is not available from any configured provider; ` +
-        'the agent will inherit the session model instead'
+        'the agent will inherit the session model instead',
     );
     return undefined;
   }
@@ -103,7 +103,7 @@ export const registerAgents = (config, settings, { availableModels, conflicts } 
     if (Object.prototype.hasOwnProperty.call(config.agent, name)) {
       warn(
         `an agent named "${name}" already exists; leaving it alone. ` +
-          'Set agents.prefix in superagent.json to register the Superagent roster alongside it.'
+          'Set agents.prefix in superagent.json to register the Superagent roster alongside it.',
       );
       conflicts?.push({ kind: 'agent', name });
       continue;

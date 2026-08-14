@@ -43,7 +43,7 @@ test('snapshotPath is stable across equivalent spellings of the same project', (
   assert.equal(
     snapshotPath('/config', '/work/alpha'),
     snapshotPath('/config', '/work/alpha/'),
-    'a trailing slash is the same project'
+    'a trailing slash is the same project',
   );
   assert.equal(snapshotPath('/config', null), snapshotPath('/config', undefined));
 });
@@ -85,7 +85,7 @@ test('a snapshot round-trips', () => {
       pluginVersion: '0.1.0',
       sessions: { s1: session(records) },
     }),
-    true
+    true,
   );
 
   const read = readSnapshot(file);
@@ -93,7 +93,11 @@ test('a snapshot round-trips', () => {
   assert.equal(read.pluginVersion, '0.1.0');
   assert.equal(read.directory, '/work/alpha');
   assert.deepEqual(sessionRecords(read, 's1'), records);
-  assert.deepEqual(sessionRecords(read, 'missing'), [], 'an unknown session is empty, not an error');
+  assert.deepEqual(
+    sessionRecords(read, 'missing'),
+    [],
+    'an unknown session is empty, not an error',
+  );
 });
 
 test('a version-1 snapshot from an older plugin copy is rejected', () => {
@@ -163,7 +167,10 @@ test('a corrupt or foreign snapshot reads as nothing rather than throwing', () =
   assert.equal(readSnapshot(array), null);
 
   const future = path.join(dir, 'future.json');
-  fs.writeFileSync(future, JSON.stringify({ version: SNAPSHOT_VERSION + 1, sessions: { s1: session() } }));
+  fs.writeFileSync(
+    future,
+    JSON.stringify({ version: SNAPSHOT_VERSION + 1, sessions: { s1: session() } }),
+  );
   assert.equal(readSnapshot(future), null, 'a newer format is not guessed at');
 });
 
@@ -191,7 +198,7 @@ test('a dispatch through the plugin lands in a snapshot the panel can read', asy
 
     await plugin['tool.execute.before'](
       { tool: 'task', sessionID: 'ses_1', callID: 'call_1' },
-      { args: { subagent_type: 'implementer', description: 'Wire the panel' } }
+      { args: { subagent_type: 'implementer', description: 'Wire the panel' } },
     );
 
     const snapshot = readSnapshot(snapshotPath(configDir, projectDir));
@@ -200,7 +207,7 @@ test('a dispatch through the plugin lands in a snapshot the panel can read', asy
 
     await plugin['tool.execute.after'](
       { tool: 'task', sessionID: 'ses_1', callID: 'call_1' },
-      { output: 'done' }
+      { output: 'done' },
     );
 
     const after = readSnapshot(snapshotPath(configDir, projectDir));
@@ -236,7 +243,10 @@ test('the panel is not fed when it is switched off', async () => {
   resetSnapshotCache();
   const configDir = tempDir();
   const projectDir = tempDir();
-  fs.writeFileSync(path.join(configDir, 'superagent.json'), JSON.stringify({ tui: { enabled: false } }));
+  fs.writeFileSync(
+    path.join(configDir, 'superagent.json'),
+    JSON.stringify({ tui: { enabled: false } }),
+  );
 
   const previous = process.env.OPENCODE_CONFIG_DIR;
   process.env.OPENCODE_CONFIG_DIR = configDir;
@@ -246,7 +256,7 @@ test('the panel is not fed when it is switched off', async () => {
 
     await plugin['tool.execute.before'](
       { tool: 'task', sessionID: 'ses_1', callID: 'call_1' },
-      { args: { subagent_type: 'implementer', description: 'Wire the panel' } }
+      { args: { subagent_type: 'implementer', description: 'Wire the panel' } },
     );
 
     assert.equal(readSnapshot(snapshotPath(configDir, projectDir)), null);

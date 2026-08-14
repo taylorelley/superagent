@@ -14,7 +14,7 @@ const assert = require('assert');
 const REPO_ROOT = path.join(__dirname, '../..');
 const SERVER_PATH = path.join(REPO_ROOT, 'skills/brainstorming/scripts/server.cjs');
 const PACKAGE_VERSION = JSON.parse(
-  fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf-8')
+  fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf-8'),
 ).version;
 const TOKEN = 'testtoken-branding-0123456789abcdef';
 
@@ -25,7 +25,7 @@ function cleanup(dir) {
 }
 
 function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function startServer({ port, dir, env = {}, serverPath = SERVER_PATH }) {
@@ -36,8 +36,8 @@ function startServer({ port, dir, env = {}, serverPath = SERVER_PATH }) {
       BRAINSTORM_PORT: String(port),
       BRAINSTORM_DIR: dir,
       BRAINSTORM_TOKEN: TOKEN,
-      ...env
-    }
+      ...env,
+    },
   });
 }
 
@@ -46,7 +46,10 @@ function waitForServer(server) {
   let stderr = '';
 
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`Server did not start. stderr: ${stderr}`)), 5000);
+    const timeout = setTimeout(
+      () => reject(new Error(`Server did not start. stderr: ${stderr}`)),
+      5000,
+    );
     server.stdout.on('data', (data) => {
       stdout += data.toString();
       if (stdout.includes('server-started')) {
@@ -54,7 +57,9 @@ function waitForServer(server) {
         resolve();
       }
     });
-    server.stderr.on('data', (data) => { stderr += data.toString(); });
+    server.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
     server.on('error', reject);
   });
 }
@@ -62,11 +67,15 @@ function waitForServer(server) {
 function fetchHtml(port) {
   return new Promise((resolve, reject) => {
     const headers = { Cookie: `brainstorm-key-${port}=${TOKEN}` };
-    http.get(`http://localhost:${port}/`, { headers }, (res) => {
-      let body = '';
-      res.on('data', chunk => { body += chunk; });
-      res.on('end', () => resolve(body));
-    }).on('error', reject);
+    http
+      .get(`http://localhost:${port}/`, { headers }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        res.on('end', () => resolve(body));
+      })
+      .on('error', reject);
   });
 }
 
@@ -84,7 +93,7 @@ async function withServer(options, fn) {
   } finally {
     if (server.exitCode === null && server.signalCode === null) {
       server.kill();
-      await new Promise(resolve => server.once('exit', resolve));
+      await new Promise((resolve) => server.once('exit', resolve));
     }
     await sleep(100);
     cleanup(options.dir);
@@ -109,58 +118,74 @@ async function test(name, fn) {
 function assertPlainTextBranding(html, version = PACKAGE_VERSION) {
   assert(
     html.includes(`Superagent v${version}`),
-    'branding text should include dynamic package version'
+    'branding text should include dynamic package version',
   );
   assert(
-    /<a href="https:\/\/github\.com\/taylorelley\/superagent">\s*<span class="brand-copy">Superagent v/.test(html),
-    'brand link should point at this project\'s repo and wrap the version text'
+    /<a href="https:\/\/github\.com\/taylorelley\/superagent">\s*<span class="brand-copy">Superagent v/.test(
+      html,
+    ),
+    "brand link should point at this project's repo and wrap the version text",
   );
   assert(
     /\.brand a\s*\{[^}]*line-height:\s*1/i.test(html),
-    'brand row should align text by its visual height'
+    'brand row should align text by its visual height',
   );
   assert(
     /\.brand a\s*\{[^}]*max-width:\s*100%/i.test(html),
-    'brand link should be constrained so it cannot overlap the status column'
+    'brand link should be constrained so it cannot overlap the status column',
   );
   assert(
     /\.brand\s*\{[^}]*line-height:\s*1/i.test(html),
-    'brand wrapper should not inherit the page line height'
+    'brand wrapper should not inherit the page line height',
   );
   assert(
     /\.brand\s*\{[^}]*overflow:\s*hidden/i.test(html),
-    'brand wrapper should clip before it reaches the status column'
+    'brand wrapper should clip before it reaches the status column',
   );
 }
 
 function assertNoRemoteAssetsOrTelemetry(html) {
   assert(!/<img\b/i.test(html), 'branding must not load any image asset');
-  assert(!html.includes('primeradiant.com'), 'branding must not reference any remote telemetry host');
+  assert(
+    !html.includes('primeradiant.com'),
+    'branding must not reference any remote telemetry host',
+  );
   assert(!html.includes('brand-logo'), 'branding must not reference a logo asset');
 }
 
 function assertFramedScreenUsesBrandHeader(html) {
-  assert(!html.includes('<div class="indicator-bar">'), 'framed screens should not render footer chrome');
   assert(
-    /<div class="header">[\s\S]*<div class="brand">[\s\S]*<div class="status">Connecting…<\/div>/.test(html),
-    'header should contain branding and connection status'
+    !html.includes('<div class="indicator-bar">'),
+    'framed screens should not render footer chrome',
   );
-  assert(!html.includes('id="indicator-text"'), 'header should not render the selection indicator text');
-  assert(!html.includes('Click an option above'), 'header should not render the selection instruction');
+  assert(
+    /<div class="header">[\s\S]*<div class="brand">[\s\S]*<div class="status">Connecting…<\/div>/.test(
+      html,
+    ),
+    'header should contain branding and connection status',
+  );
+  assert(
+    !html.includes('id="indicator-text"'),
+    'header should not render the selection indicator text',
+  );
+  assert(
+    !html.includes('Click an option above'),
+    'header should not render the selection instruction',
+  );
 }
 
 function assertHeaderAvoidsNarrowOverlap(html) {
   assert(
     /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto/i.test(html),
-    'header should allocate shrinkable space to branding before the status column'
+    'header should allocate shrinkable space to branding before the status column',
   );
   assert(
     /\.header \.status\s*\{[^}]*grid-column:\s*2/i.test(html),
-    'status should live in the final fixed-width grid column'
+    'status should live in the final fixed-width grid column',
   );
   assert(
     /\.header \.brand\s*\{[^}]*width:\s*100%/i.test(html),
-    'header brand should fill its grid track so overflow clipping prevents overlap'
+    'header brand should fill its grid track so overflow clipping prevents overlap',
   );
 }
 

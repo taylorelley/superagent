@@ -37,9 +37,7 @@ const DISPATCH_KEYS = /^\s*(description|model|prompt|subagent_type):/;
 
 /** Remove the common leading indent so the body reads as a top-level prompt. */
 const dedent = (lines) => {
-  const indents = lines
-    .filter((line) => line.trim())
-    .map((line) => line.match(/^\s*/)[0].length);
+  const indents = lines.filter((line) => line.trim()).map((line) => line.match(/^\s*/)[0].length);
   if (!indents.length) return lines;
   const common = Math.min(...indents);
   return lines.map((line) => line.slice(common));
@@ -58,7 +56,7 @@ export const extractDispatchTemplate = (text, label = 'template') => {
   const lines = text.split('\n');
 
   const fenceStart = lines.findIndex(
-    (line, i) => /^```/.test(line) && DISPATCH_HEADER.test(lines[i + 1] ?? '')
+    (line, i) => /^```/.test(line) && DISPATCH_HEADER.test(lines[i + 1] ?? ''),
   );
   if (fenceStart === -1) {
     throw new Error(`${label}: no fenced block starting with "Subagent (" found`);

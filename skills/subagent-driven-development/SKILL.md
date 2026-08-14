@@ -272,8 +272,9 @@ or serialize, then continue. Merge order within a wave is unconstrained.
 
 ### Review isolation
 
-The review package for task N is `wave-base..<plan-basename>/t<N>`: the task's
-own branch never contains another task's commits, so the range is exact.
+The review package for task N is `base..<plan-basename>/t<N>` (the same `base`
+the worktree was created from, above): the task's own branch never contains
+another task's commits, so the range is exact.
 Re-reviews take FIX_BASE as the last reviewed commit on the same branch.
 
 ### Fix loops and escalation

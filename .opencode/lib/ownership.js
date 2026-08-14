@@ -98,7 +98,9 @@ export const globsOverlap = (a, b) => {
 export const findConflicts = (claim, others) => {
   if (!claim?.write?.length) return [];
   return others.filter((other) =>
-    other.ownership?.write?.some((theirs) => claim.write.some((ours) => globsOverlap(ours, theirs)))
+    other.ownership?.write?.some((theirs) =>
+      claim.write.some((ours) => globsOverlap(ours, theirs)),
+    ),
   );
 };
 
@@ -109,7 +111,8 @@ export const conflictNotice = (conflicts) =>
     'Another dispatch is already running and claims write access to paths that',
     'overlap yours:',
     ...conflicts.map(
-      (other) => `  - ${other.agent} (${other.objective}) owns: ${other.ownership.write.join(', ')}`
+      (other) =>
+        `  - ${other.agent} (${other.objective}) owns: ${other.ownership.write.join(', ')}`,
     ),
     '',
     'Do not edit files inside those paths. If your task cannot be completed',

@@ -14,7 +14,11 @@ import path from 'path';
 
 import { stripJsonc, deepMerge } from '../../.opencode/lib/fs-utils.js';
 import { loadConfig, readConfigFile } from '../../.opencode/lib/config-schema.js';
-import { extractDispatchTemplate, extractDispatchTemplateFile, AGENT_CONTRACT } from '../../.opencode/lib/prompt-compose.js';
+import {
+  extractDispatchTemplate,
+  extractDispatchTemplateFile,
+  AGENT_CONTRACT,
+} from '../../.opencode/lib/prompt-compose.js';
 import { ROSTER } from '../../.opencode/lib/roster.js';
 import { registerAgents, resetPromptCache } from '../../.opencode/lib/agents.js';
 import { renderRoutingTable, renderConflicts } from '../../.opencode/lib/routing.js';
@@ -68,19 +72,27 @@ test('config layers project over user over preset over defaults', () => {
     withTempDir((projectDir) => {
       fs.writeFileSync(
         path.join(userDir, 'superagent.json'),
-        JSON.stringify({ agents: { models: { reviewer: 'user/model', oracle: 'user/oracle' } } })
+        JSON.stringify({ agents: { models: { reviewer: 'user/model', oracle: 'user/oracle' } } }),
       );
       fs.mkdirSync(path.join(projectDir, '.opencode'), { recursive: true });
       fs.writeFileSync(
         path.join(projectDir, '.opencode', 'superagent.json'),
-        JSON.stringify({ agents: { models: { reviewer: 'project/model' } } })
+        JSON.stringify({ agents: { models: { reviewer: 'project/model' } } }),
       );
 
       const settings = loadConfig({ configDir: userDir, projectDir, env: {} });
       assert.equal(settings.agents.models.reviewer, 'project/model', 'project wins over user');
-      assert.equal(settings.agents.models.oracle, 'user/oracle', 'user survives where project is silent');
-      assert.equal(settings.agents.models.implementer, null, 'defaults survive where both are silent');
-    })
+      assert.equal(
+        settings.agents.models.oracle,
+        'user/oracle',
+        'user survives where project is silent',
+      );
+      assert.equal(
+        settings.agents.models.implementer,
+        null,
+        'defaults survive where both are silent',
+      );
+    }),
   );
 });
 
@@ -96,7 +108,7 @@ test('JSONC config files are accepted', () => {
   withTempDir((dir) => {
     fs.writeFileSync(
       path.join(dir, 'superagent.json'),
-      '{\n  // pick a preset\n  "preset": "solo",\n}'
+      '{\n  // pick a preset\n  "preset": "solo",\n}',
     );
     assert.equal(loadConfig({ configDir: dir, env: {} }).preset, 'solo');
   });
@@ -108,7 +120,10 @@ test('an unknown preset falls back to the default', () => {
 
 test('an invalid enum value is clamped rather than propagated', () => {
   withTempDir((dir) => {
-    fs.writeFileSync(path.join(dir, 'superagent.json'), JSON.stringify({ board: { strategy: 'wat' } }));
+    fs.writeFileSync(
+      path.join(dir, 'superagent.json'),
+      JSON.stringify({ board: { strategy: 'wat' } }),
+    );
     assert.equal(loadConfig({ configDir: dir, env: {} }).board.strategy, 'latest');
   });
 });
@@ -132,7 +147,10 @@ test('every roster template extracts to a usable agent prompt', () => {
     assert.ok(!prompt.includes('Subagent ('), `${entry.key}: leaked the dispatch header`);
     assert.ok(!prompt.includes('[MODEL'), `${entry.key}: leaked the model placeholder`);
     assert.ok(!prompt.startsWith('```'), `${entry.key}: leaked the code fence`);
-    assert.ok(!prompt.includes('Use this template when dispatching'), `${entry.key}: leaked the prose wrapper`);
+    assert.ok(
+      !prompt.includes('Use this template when dispatching'),
+      `${entry.key}: leaked the prose wrapper`,
+    );
     // Role framing must survive.
     assert.match(prompt, /^You are /, `${entry.key}: prompt does not open with role framing`);
   }
@@ -141,8 +159,14 @@ test('every roster template extracts to a usable agent prompt', () => {
 test('a template whose shape changed fails loudly rather than degrading', () => {
   // If upstream rewrites a prompt file, we want a test failure here rather than
   // an agent registered with a page of markdown about dispatching.
-  assert.throws(() => extractDispatchTemplate('# Just a heading\n\nNo fence.', 'fake'), /no fenced block/);
-  assert.throws(() => extractDispatchTemplate('```\nSubagent (x):\n  prompt: |\n```', 'fake'), /empty/);
+  assert.throws(
+    () => extractDispatchTemplate('# Just a heading\n\nNo fence.', 'fake'),
+    /no fenced block/,
+  );
+  assert.throws(
+    () => extractDispatchTemplate('```\nSubagent (x):\n  prompt: |\n```', 'fake'),
+    /empty/,
+  );
 });
 
 // --------------------------------------------------------------- roster
@@ -164,11 +188,23 @@ test('the roster registers with correct modes, permissions and prompts', () => {
   // Workers must not be able to dispatch. Denying with pattern "*" removes the
   // tool from the agent entirely, which is what makes this structural.
   for (const entry of ROSTER.filter((e) => !e.orchestrator)) {
-    assert.equal(config.agent[entry.key].permission.task, 'deny', `${entry.key} can still dispatch`);
+    assert.equal(
+      config.agent[entry.key].permission.task,
+      'deny',
+      `${entry.key} can still dispatch`,
+    );
   }
 
   // Reviewers and advisors must not be able to edit.
-  for (const key of ['task-reviewer', 're-reviewer', 'code-reviewer', 'spec-reviewer', 'plan-reviewer', 'oracle', 'librarian']) {
+  for (const key of [
+    'task-reviewer',
+    're-reviewer',
+    'code-reviewer',
+    'spec-reviewer',
+    'plan-reviewer',
+    'oracle',
+    'librarian',
+  ]) {
     assert.equal(config.agent[key].permission.edit, 'deny', `${key} can still edit`);
   }
 });
@@ -189,7 +225,11 @@ test('a routed model slot sets the model', () => {
   const config = {};
   registerAgents(config, settings);
   assert.equal(config.agent['task-reviewer'].model, 'someprovider/somemodel');
-  assert.equal(config.agent['re-reviewer'].model, 'someprovider/somemodel', 'shares the reviewer slot');
+  assert.equal(
+    config.agent['re-reviewer'].model,
+    'someprovider/somemodel',
+    'shares the reviewer slot',
+  );
   assert.ok(!('model' in config.agent.implementer), 'other slots unaffected');
 });
 
@@ -199,7 +239,10 @@ test('an unavailable model is dropped rather than substituted', () => {
   settings.agents.models.reviewer = 'ghost/model';
   const config = {};
   registerAgents(config, settings, { availableModels: new Set(['real/model']) });
-  assert.ok(!('model' in config.agent['task-reviewer']), 'should inherit, not fall back to another model');
+  assert.ok(
+    !('model' in config.agent['task-reviewer']),
+    'should inherit, not fall back to another model',
+  );
 });
 
 test('an existing agent of the same name is never overwritten', () => {
@@ -339,9 +382,18 @@ test('renderConflicts lists every collision and the prefix remedy', () => {
 
 test('background availability is read from the environment', () => {
   assert.equal(backgroundSubagentsAvailable({}), false);
-  assert.equal(backgroundSubagentsAvailable({ OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: 'true' }), true);
-  assert.equal(backgroundSubagentsAvailable({ OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: '1' }), true);
-  assert.equal(backgroundSubagentsAvailable({ OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: 'false' }), false);
+  assert.equal(
+    backgroundSubagentsAvailable({ OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: 'true' }),
+    true,
+  );
+  assert.equal(
+    backgroundSubagentsAvailable({ OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: '1' }),
+    true,
+  );
+  assert.equal(
+    backgroundSubagentsAvailable({ OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: 'false' }),
+    false,
+  );
 });
 
 // ------------------------------------------------- orchestrator prompt
@@ -349,7 +401,7 @@ test('background availability is read from the environment', () => {
 test('the orchestrator prompt carries routing, not methodology', () => {
   const prompt = fs.readFileSync(
     path.join(packageRoot, '.opencode', 'prompts', 'orchestrator.md'),
-    'utf8'
+    'utf8',
   );
 
   // The routing table is only worth anything if every skill it names resolves.
@@ -370,20 +422,21 @@ test('the orchestrator prompt carries routing, not methodology', () => {
     // The skill exists...
     assert.ok(
       fs.existsSync(path.join(packageRoot, 'skills', skill, 'SKILL.md')),
-      `orchestrator.md routes to "${skill}", which has no skills/${skill}/SKILL.md`
+      `orchestrator.md routes to "${skill}", which has no skills/${skill}/SKILL.md`,
     );
     // ...and the prompt still routes to it.
-    assert.ok(
-      prompt.includes(`\`${skill}\``),
-      `orchestrator.md no longer routes to "${skill}"`
-    );
+    assert.ok(prompt.includes(`\`${skill}\``), `orchestrator.md no longer routes to "${skill}"`);
   }
 
   const skills = new Set(fs.readdirSync(path.join(packageRoot, 'skills')));
 
   // The anti-duplication net: the prompt must not restate skill bodies.
   const shingles = (text) => {
-    const words = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+    const words = text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean);
     const out = new Set();
     for (let i = 0; i + 12 <= words.length; i += 1) out.add(words.slice(i, i + 12).join(' '));
     return out;
@@ -393,7 +446,10 @@ test('the orchestrator prompt carries routing, not methodology', () => {
     const skillFile = path.join(packageRoot, 'skills', dir, 'SKILL.md');
     if (!fs.existsSync(skillFile)) continue;
     for (const shingle of shingles(fs.readFileSync(skillFile, 'utf8'))) {
-      assert.ok(!promptShingles.has(shingle), `orchestrator.md duplicates ${dir}/SKILL.md: "${shingle}"`);
+      assert.ok(
+        !promptShingles.has(shingle),
+        `orchestrator.md duplicates ${dir}/SKILL.md: "${shingle}"`,
+      );
     }
   }
 });
@@ -405,7 +461,11 @@ test('the agent contract tells specialists how to report missing context', () =>
 
 // --------------------------------------------------------------- council
 
-import { usableMembers, registerCouncillors, councilInstruction } from '../../.opencode/lib/council.js';
+import {
+  usableMembers,
+  registerCouncillors,
+  councilInstruction,
+} from '../../.opencode/lib/council.js';
 import { registerCommands, expandCommand, COMMANDS } from '../../.opencode/lib/commands.js';
 
 const councilSettings = (members, enabled = true) => {
@@ -443,7 +503,11 @@ test('councillors register as sealed subagents with their own models', () => {
     assert.match(agent.prompt, /VERDICT:/);
     assert.match(agent.prompt, /RISK:/);
   }
-  assert.match(config.agent['councillor-alpha'].prompt, /correctness/, 'steering should reach the prompt');
+  assert.match(
+    config.agent['councillor-alpha'].prompt,
+    /correctness/,
+    'steering should reach the prompt',
+  );
 });
 
 test('councillors are not registered when the council is off', () => {
@@ -488,7 +552,10 @@ test('an unconfigured council explains itself instead of dispatching', () => {
   const text = councilInstruction([], 'anything');
   assert.match(text, /not configured/);
   assert.match(text, /"members"/);
-  assert.ok(!text.includes('councillor-'), 'must not tell the model to dispatch nonexistent agents');
+  assert.ok(
+    !text.includes('councillor-'),
+    'must not tell the model to dispatch nonexistent agents',
+  );
 });
 
 // -------------------------------------------------------------- commands
@@ -537,7 +604,10 @@ test('/preset --persist writes the choice to the state file', () => {
       configDir: dir,
     });
     assert.match(text, /saved/);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'superagent.state.json'), 'utf8')).preset, 'solo');
+    assert.equal(
+      JSON.parse(fs.readFileSync(path.join(dir, 'superagent.state.json'), 'utf8')).preset,
+      'solo',
+    );
     // And it must actually be read back on the next load.
     assert.equal(loadConfig({ configDir: dir, env: {} }).preset, 'solo');
   });
@@ -591,7 +661,10 @@ test('the roster still registers from a config with null sections', () => {
   withTempDir((dir) => {
     fs.writeFileSync(path.join(dir, 'superagent.json'), '{"agents": null, "council": null}');
     const config = {};
-    assert.equal(registerAgents(config, loadConfig({ configDir: dir, env: {} })).length, ROSTER.length);
+    assert.equal(
+      registerAgents(config, loadConfig({ configDir: dir, env: {} })).length,
+      ROSTER.length,
+    );
   });
 });
 
@@ -603,7 +676,10 @@ test('council honours a configured minParticipants above the floor', () => {
   ];
   assert.equal(usableMembers({ enabled: true, members: three, minParticipants: 3 }).length, 3);
   // Two members no longer suffice when the user asked for three.
-  assert.deepEqual(usableMembers({ enabled: true, members: three.slice(0, 2), minParticipants: 3 }), []);
+  assert.deepEqual(
+    usableMembers({ enabled: true, members: three.slice(0, 2), minParticipants: 3 }),
+    [],
+  );
   // But the floor still applies: a "council" of one is a single opinion.
   assert.deepEqual(usableMembers({ enabled: true, members: [three[0]], minParticipants: 1 }), []);
   // A nonsense value falls back to the floor rather than disabling the council.
@@ -644,7 +720,7 @@ test('a deeply indented prompt body survives extraction', () => {
     'Subagent (general-purpose):',
     '  description: "Do a thing"',
     '  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted',
-    '         model silently inherits the session\'s most expensive one]',
+    "         model silently inherits the session's most expensive one]",
     '  prompt: |',
     '        You are a deeply indented specialist.',
     '',
@@ -674,7 +750,7 @@ test('every template-backed roster entry registers with a real prompt', () => {
     assert.ok(agent, `${entry.key} was not registered`);
     assert.ok(
       agent.prompt.split('\n').length > 30,
-      `${entry.key}: prompt is ${agent.prompt.split('\n').length} lines, expected the full role body`
+      `${entry.key}: prompt is ${agent.prompt.split('\n').length} lines, expected the full role body`,
     );
   }
 });

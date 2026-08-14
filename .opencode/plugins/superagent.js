@@ -33,6 +33,7 @@ import { registerCouncillors } from '../lib/council.js';
 import { registerCommands, expandCommand } from '../lib/commands.js';
 import { guardHook, debug } from '../lib/log.js';
 
+// eslint-disable-next-line no-unused-vars -- part of OpenCode's plugin factory signature
 export const SuperagentPlugin = async ({ client, directory }) => {
   const configDir = resolveConfigDir();
   const settings = loadConfig({ configDir, projectDir: directory });
@@ -53,7 +54,11 @@ export const SuperagentPlugin = async ({ client, directory }) => {
 
   const publishBoard = () => {
     if (!snapshotFile) return;
-    writeSnapshot(snapshotFile, { directory, pluginVersion: readVersion(), sessions: boardSnapshots() });
+    writeSnapshot(snapshotFile, {
+      directory,
+      pluginVersion: readVersion(),
+      sessions: boardSnapshots(),
+    });
   };
 
   return {
@@ -120,7 +125,7 @@ export const SuperagentPlugin = async ({ client, directory }) => {
       if (!event?.type) return;
       const changed = onSessionEvent(
         event.type,
-        event.properties?.sessionID ?? event.properties?.info?.id
+        event.properties?.sessionID ?? event.properties?.info?.id,
       );
       if (changed) publishBoard();
     }),
@@ -132,7 +137,7 @@ export const SuperagentPlugin = async ({ client, directory }) => {
           injectBootstrap(output?.messages, getBootstrapContent(skillsDir, routingTable));
         }
         injectBoard(output?.messages, settings);
-      }
+      },
     ),
   };
 };
