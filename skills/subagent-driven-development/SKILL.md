@@ -236,6 +236,9 @@ All three required, else serial:
    size ≥ 2.
 3. `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` is set.
 
+If worktree creation fails (sandbox/permission), fall back to serial execution
+in place, with a ledger note.
+
 Wave computation: wave 1 is the tasks with no dependencies; wave k+1 is the
 tasks whose every dependency is in waves 1..k. Before dispatching a wave,
 verify every pair of tasks in it has disjoint `Files:` blocks. An overlap is a

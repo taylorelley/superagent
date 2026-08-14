@@ -268,12 +268,15 @@ still applies. A plugin cannot enable this itself.
 When a plan declares independent tasks (its Task Order & Dependencies table —
 see `skills/writing-plans`) and background subagents are enabled, SDD executes
 each wave concurrently: every task gets its own git worktree at
-`.worktrees/<plan>/t<N>` on its own branch, is dispatched with
+`.worktrees/<plan-basename>/t<N>` on its own branch, is dispatched with
 `background: true`, and the controller merges each branch back into the
 feature branch after its review passes. A merge conflict means the plan's
 disjoint-files claim was wrong — surfaced loudly as a plan defect rather than
 a silent overwrite. Without the flag, a wave of one, or no table, SDD runs
 serially as before.
+
+If worktree creation fails (sandbox/permission), SDD falls back to serial
+execution in place, with a ledger note.
 
 ## The council
 
