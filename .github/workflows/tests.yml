@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  plugin-tests:
+  tests:
     name: Plugin tests (tests/)
     runs-on: ubuntu-latest
     steps:
@@ -41,3 +41,48 @@ jobs:
         run: |
           npm --prefix tests/brainstorm-server install
           npm --prefix tests/brainstorm-server test
+
+  lint:
+    name: Code quality (shellcheck, JS syntax)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+
+      # This is the repo's real lint gate (shellcheck + `bash -n`/`sh -n`
+      # syntax checks over every tracked shell file) — distinct from the
+      # "Shell lint self-tests" job above, which only exercises
+      # lint-shell.sh's own argument-parsing and file-selection logic
+      # against stub tools and never actually lints a real script.
+      - name: Shellcheck the repo's shell scripts
+        run: bash scripts/lint-shell.sh --all
+
+      # Zero-dependency syntax sanity for every tracked JS/MJS/CJS file.
+      # `node --test` already parses whatever it imports, so this exists to
+      # catch a syntax error in a module that happens not to be reachable
+      # from any test today.
+      - name: Syntax-check JS files
+        run: |
+          status=0
+          while IFS= read -r -d '' file; do
+            node --check "$file" || status=1
+          done < <(git ls-files -z '*.js' '*.mjs' '*.cjs')
+          exit "$status"
+
+      # Deliberately not run here:
+      #   - shfmt formatting: scripts/lint-shell.sh's own --format flag is
+      #     opt-in (it rewrites files), and several tracked scripts predate
+      #     shfmt's default style — enforcing it in CI would fail on files
+      #     unrelated to whatever a PR actually changed, stricter than the
+      #     project's own convention.
+      #   - ESLint/Prettier: would add a devDependency, which conflicts
+      #     with this repo's zero-dependency-by-design policy (AGENTS.md).
+      #   - A static security scanner (e.g. opengrep/semgrep): used ad hoc
+      #     by past contributors per commit history, but no config or
+      #     verified-clean baseline exists in-repo to wire into CI safely.
