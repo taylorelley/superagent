@@ -113,6 +113,11 @@ The table goes in the plan after the header, before the first task. If every
 task is serial, say why (shared files or sequential dependencies); do not leave
 the table out.
 
+Wave computation for the executor: wave 1 is the tasks with no dependencies;
+wave k+1 is the tasks whose every dependency is in waves 1..k. Tasks in the
+same wave must have disjoint `Files:` blocks — the executor verifies this
+before dispatch and treats an overlap as a plan defect.
+
 ## Task Structure
 
 ````markdown
