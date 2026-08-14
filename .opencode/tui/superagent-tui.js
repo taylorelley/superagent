@@ -32,10 +32,10 @@ import { resolveConfigDir } from '../lib/paths.js';
 import { loadConfig } from '../lib/config-schema.js';
 import { ROSTER } from '../lib/roster.js';
 import { renderPanel } from '../lib/tui-panel.js';
-import { snapshotPath, readSnapshot, sessionRecords } from '../lib/tui-snapshot.js';
+import { snapshotPath, readSnapshot, sessionRecords, readVersion } from '../lib/tui-snapshot.js';
 import { debug, warn } from '../lib/log.js';
 
-export { readVersion } from '../lib/tui-snapshot.js';
+export { readVersion };
 
 /** How often the board snapshot is re-checked. Slim uses the same cadence. */
 const POLL_MS = 1000;
