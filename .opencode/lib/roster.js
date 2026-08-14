@@ -59,7 +59,7 @@ export const ROSTER = [
     slot: 'implementerDeep',
     description:
       'Implements a task that earlier rounds failed to fix. Route escalated fix rounds here.',
-    routing: 're-attempting a task after an earlier implementer\'s fix did not hold',
+    routing: "re-attempting a task after an earlier implementer's fix did not hold",
     prompt: {
       kind: 'template',
       path: 'skills/subagent-driven-development/implementer-prompt.md',
@@ -75,8 +75,11 @@ export const ROSTER = [
     mode: 'subagent',
     slot: 'reviewer',
     description: "Reviews one task's diff for spec compliance and code quality.",
-    routing: 'reviewing one task\'s diff for spec compliance and quality',
-    prompt: { kind: 'template', path: 'skills/subagent-driven-development/task-reviewer-prompt.md' },
+    routing: "reviewing one task's diff for spec compliance and quality",
+    prompt: {
+      kind: 'template',
+      path: 'skills/subagent-driven-development/task-reviewer-prompt.md',
+    },
     permission: READ_ONLY,
   },
   {

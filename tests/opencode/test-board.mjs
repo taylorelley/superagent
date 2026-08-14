@@ -33,8 +33,10 @@ const userMessage = (sessionID, text = 'hello') => ({
 test('parseOwnership reads a declaration, and distinguishes absent from empty', () => {
   assert.equal(parseOwnership('no marker here'), null, 'absent must be distinguishable');
   assert.deepEqual(
-    parseOwnership('do work\n<!-- superagent-ownership: write=src/api/**,src/db/**; read=src/** -->\n'),
-    { write: ['src/api/**', 'src/db/**'], read: ['src/**'] }
+    parseOwnership(
+      'do work\n<!-- superagent-ownership: write=src/api/**,src/db/**; read=src/** -->\n',
+    ),
+    { write: ['src/api/**', 'src/db/**'], read: ['src/**'] },
   );
   assert.deepEqual(parseOwnership('<!-- superagent-ownership: read=src/** -->'), {
     write: [],
@@ -52,10 +54,23 @@ test('globsOverlap errs toward reporting a conflict', () => {
 
 test('findConflicts only considers write claims against write claims', () => {
   const running = [
-    { id: 'a', agent: 'implementer', objective: 'api', ownership: { write: ['src/api/**'], read: [] } },
-    { id: 'b', agent: 'implementer', objective: 'docs', ownership: { write: ['docs/**'], read: [] } },
+    {
+      id: 'a',
+      agent: 'implementer',
+      objective: 'api',
+      ownership: { write: ['src/api/**'], read: [] },
+    },
+    {
+      id: 'b',
+      agent: 'implementer',
+      objective: 'docs',
+      ownership: { write: ['docs/**'], read: [] },
+    },
   ];
-  assert.deepEqual(findConflicts({ write: ['src/api/routes.ts'] }, running).map((r) => r.id), ['a']);
+  assert.deepEqual(
+    findConflicts({ write: ['src/api/routes.ts'] }, running).map((r) => r.id),
+    ['a'],
+  );
   assert.deepEqual(findConflicts({ write: ['test/**'] }, running), []);
   // A read-only dispatch cannot collide with anyone.
   assert.deepEqual(findConflicts({ write: [], read: ['src/**'] }, running), []);
@@ -80,7 +95,12 @@ test('a foreground dispatch is recorded and completed', () => {
 test('a background dispatch stays running until its session ends', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root', 'call-1', { subagent_type: 'implementer', description: 'Task 1', background: true }, s);
+  onDispatch(
+    'root',
+    'call-1',
+    { subagent_type: 'implementer', description: 'Task 1', background: true },
+    s,
+  );
 
   // The tool returns as soon as the job launches — that is not completion.
   onDispatchResult('root', 'call-1', { metadata: { background: true, jobId: 'child-9' } }, s);
@@ -126,7 +146,11 @@ test('conflicting write claims annotate the second dispatch', () => {
   onDispatch('root', 'c2', second, s);
 
   assert.match(second.prompt, /SUPERAGENT_OWNERSHIP_CONFLICT/, 'second dispatch was not warned');
-  assert.match(second.prompt, /src\/api\/\*\*/, 'conflict notice should name the conflicting claim');
+  assert.match(
+    second.prompt,
+    /src\/api\/\*\*/,
+    'conflict notice should name the conflicting claim',
+  );
   assert.ok(second.prompt.endsWith('edit routes'), 'the original prompt must survive');
   assert.ok(!first.prompt.includes('CONFLICT'), 'the first dispatch should not be annotated');
 });
@@ -139,7 +163,16 @@ test('non-overlapping claims are not flagged', () => {
     description: 'Docs',
     prompt: '<!-- superagent-ownership: write=docs/** -->\nwrite docs',
   };
-  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'API', prompt: '<!-- superagent-ownership: write=src/api/** -->' }, s);
+  onDispatch(
+    'root',
+    'c1',
+    {
+      subagent_type: 'implementer',
+      description: 'API',
+      prompt: '<!-- superagent-ownership: write=src/api/** -->',
+    },
+    s,
+  );
   onDispatch('root', 'c2', second, s);
   assert.ok(!second.prompt.includes('CONFLICT'));
 });
@@ -147,10 +180,23 @@ test('non-overlapping claims are not flagged', () => {
 test('a completed dispatch no longer conflicts with a new one', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'API', prompt: '<!-- superagent-ownership: write=src/api/** -->' }, s);
+  onDispatch(
+    'root',
+    'c1',
+    {
+      subagent_type: 'implementer',
+      description: 'API',
+      prompt: '<!-- superagent-ownership: write=src/api/** -->',
+    },
+    s,
+  );
   onDispatchResult('root', 'c1', { output: 'done' }, s);
 
-  const second = { subagent_type: 'implementer', description: 'More API', prompt: '<!-- superagent-ownership: write=src/api/** -->\ngo' };
+  const second = {
+    subagent_type: 'implementer',
+    description: 'More API',
+    prompt: '<!-- superagent-ownership: write=src/api/** -->\ngo',
+  };
   onDispatch('root', 'c2', second, s);
   assert.ok(!second.prompt.includes('CONFLICT'), 'a finished dispatch still owns its files');
 });
@@ -158,7 +204,12 @@ test('a completed dispatch no longer conflicts with a new one', () => {
 test('the board flags running dispatches that declared no ownership', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'T', prompt: 'no marker' }, s);
+  onDispatch(
+    'root',
+    'c1',
+    { subagent_type: 'implementer', description: 'T', prompt: 'no marker' },
+    s,
+  );
   assert.match(renderBoard('root'), /declared no file ownership/);
 });
 
@@ -197,7 +248,9 @@ test('the latest strategy leaves exactly one snapshot after repeated transforms'
   injectBoard(messages, s);
   injectBoard(messages, s);
 
-  const snapshots = messages.flatMap((m) => m.parts).filter((p) => p.text?.startsWith(BOARD_MARKER));
+  const snapshots = messages
+    .flatMap((m) => m.parts)
+    .filter((p) => p.text?.startsWith(BOARD_MARKER));
   assert.equal(snapshots.length, 1, 'stale snapshots accumulated in history');
 });
 
@@ -221,7 +274,11 @@ test('the snapshot goes on the last user message, not the first', () => {
   const s = settings();
   onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'T' }, s);
 
-  const messages = [userMessage('root', 'first'), { info: { role: 'assistant', sessionID: 'root' }, parts: [] }, userMessage('root', 'latest')];
+  const messages = [
+    userMessage('root', 'first'),
+    { info: { role: 'assistant', sessionID: 'root' }, parts: [] },
+    userMessage('root', 'latest'),
+  ];
   injectBoard(messages, s);
 
   assert.ok(!messages[0].parts.some((p) => p.text?.startsWith(BOARD_MARKER)));
@@ -258,7 +315,7 @@ test('boardSnapshots projects the ledger as plain data for the panel', () => {
       background: true,
       prompt: 'work\n<!-- superagent-ownership: write=src/api/** -->\n',
     },
-    s
+    s,
   );
 
   const snapshots = boardSnapshots();

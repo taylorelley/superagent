@@ -54,7 +54,11 @@ export const SuperagentPlugin = async ({ client, directory }) => {
 
   const publishBoard = () => {
     if (!snapshotFile) return;
-    writeSnapshot(snapshotFile, { directory, pluginVersion: readVersion(), sessions: boardSnapshots() });
+    writeSnapshot(snapshotFile, {
+      directory,
+      pluginVersion: readVersion(),
+      sessions: boardSnapshots(),
+    });
   };
 
   return {
@@ -121,7 +125,7 @@ export const SuperagentPlugin = async ({ client, directory }) => {
       if (!event?.type) return;
       const changed = onSessionEvent(
         event.type,
-        event.properties?.sessionID ?? event.properties?.info?.id
+        event.properties?.sessionID ?? event.properties?.info?.id,
       );
       if (changed) publishBoard();
     }),
@@ -133,7 +137,7 @@ export const SuperagentPlugin = async ({ client, directory }) => {
           injectBootstrap(output?.messages, getBootstrapContent(skillsDir, routingTable));
         }
         injectBoard(output?.messages, settings);
-      }
+      },
     ),
   };
 };

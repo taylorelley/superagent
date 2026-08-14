@@ -88,11 +88,21 @@ jobs:
       - name: ESLint
         run: npm run lint
 
-      # Deliberately not run here: shfmt formatting. scripts/lint-shell.sh's
-      # own --format flag is opt-in (it rewrites files), and several tracked
-      # scripts predate shfmt's default style — enforcing it in CI would
-      # fail on files unrelated to whatever a PR actually changed, stricter
-      # than the project's own convention. A static security scanner (e.g.
-      # opengrep/semgrep) is also not included: used ad hoc by past
-      # contributors per commit history, but no config or verified-clean
-      # baseline exists in-repo to wire into CI safely yet.
+      # .prettierrc.json pins singleQuote (the codebase's existing
+      # convention; Prettier's own default is double quotes, which would
+      # have touched every string in the tree) and a 100-column printWidth
+      # (over half the tracked lines already exceed 80). The whole tree was
+      # reformatted to this config before the check was wired in, so this
+      # is enforcing the project's actual style, not aspiring to one.
+      - name: Prettier format check
+        run: npm run format:check
+
+      # Deliberately not run here: shfmt formatting for shell scripts.
+      # scripts/lint-shell.sh's own --format flag is opt-in (it rewrites
+      # files), and several tracked scripts predate shfmt's default style —
+      # enforcing it in CI would fail on files unrelated to whatever a PR
+      # actually changed, stricter than the project's own convention. A
+      # static security scanner (e.g. opengrep/semgrep) is also not
+      # included: used ad hoc by past contributors per commit history, but
+      # no config or verified-clean baseline exists in-repo to wire into CI
+      # safely yet.

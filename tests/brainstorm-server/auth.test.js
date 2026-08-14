@@ -30,7 +30,7 @@ const EXPECTED_SECURITY_HEADERS = {
   'cache-control': 'no-store',
   'x-frame-options': 'DENY',
   'content-security-policy': "frame-ancestors 'none'",
-  'cross-origin-resource-policy': 'same-origin'
+  'cross-origin-resource-policy': 'same-origin',
 };
 
 function cleanup() {
@@ -38,7 +38,7 @@ function cleanup() {
 }
 
 async function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // Raw HTTP GET with optional key query and Cookie header.
@@ -47,11 +47,13 @@ function get(pathname, { key, cookie } = {}) {
   const headers = {};
   if (cookie) headers['Cookie'] = cookie;
   return new Promise((resolve, reject) => {
-    http.get(url, { headers }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
-    }).on('error', reject);
+    http
+      .get(url, { headers }, (res) => {
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
+      })
+      .on('error', reject);
   });
 }
 
@@ -65,7 +67,12 @@ function wsConnect({ key, cookie, origin } = {}) {
   const ws = new WebSocket(url, opts);
   return new Promise((resolve) => {
     let settled = false;
-    const done = (outcome) => { if (!settled) { settled = true; resolve({ outcome, ws }); } };
+    const done = (outcome) => {
+      if (!settled) {
+        settled = true;
+        resolve({ outcome, ws });
+      }
+    };
     ws.on('open', () => done('opened'));
     ws.on('error', () => done('rejected'));
     ws.on('close', () => done('rejected'));
@@ -75,7 +82,12 @@ function wsConnect({ key, cookie, origin } = {}) {
 
 function startServer() {
   return spawn('node', [SERVER_PATH], {
-    env: { ...process.env, BRAINSTORM_PORT: TEST_PORT, BRAINSTORM_DIR: TEST_DIR, BRAINSTORM_TOKEN: TOKEN }
+    env: {
+      ...process.env,
+      BRAINSTORM_PORT: TEST_PORT,
+      BRAINSTORM_DIR: TEST_DIR,
+      BRAINSTORM_TOKEN: TOKEN,
+    },
   });
 }
 
@@ -89,26 +101,36 @@ function runBootstrapScript(html, sessionStorage) {
   const match = html.match(/<script>\n([\s\S]*?)\n<\/script>/);
   assert(match, 'bootstrap response should contain a script block');
   const replacements = [];
-  const location = { replace(url) { replacements.push(url); } };
+  const location = {
+    replace(url) {
+      replacements.push(url);
+    },
+  };
   new Function('sessionStorage', 'location', match[1])(sessionStorage, location);
   return replacements;
 }
 
 async function waitForServer(server) {
-  let stdout = '', stderr = '';
+  let stdout = '',
+    stderr = '';
   return new Promise((resolve, reject) => {
     server.stdout.on('data', (d) => {
       stdout += d.toString();
       if (stdout.includes('server-started')) resolve({ stdout });
     });
-    server.stderr.on('data', (d) => { stderr += d.toString(); });
+    server.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
     server.on('error', reject);
     setTimeout(() => reject(new Error(`Server didn't start. stderr: ${stderr}`)), 5000);
   });
 }
 
 function serverStartedMessage(out) {
-  const line = out.trim().split('\n').find(l => l.includes('server-started'));
+  const line = out
+    .trim()
+    .split('\n')
+    .find((l) => l.includes('server-started'));
   assert(line, 'server-started JSON should be present');
   return JSON.parse(line);
 }
@@ -118,7 +140,7 @@ function assertStartedOnExpectedPort(out) {
   assert.strictEqual(
     msg.port,
     TEST_PORT,
-    `auth.test.js expected fixed port ${TEST_PORT}, got ${msg.port}; fixed-port tests must not run through fallback`
+    `auth.test.js expected fixed port ${TEST_PORT}, got ${msg.port}; fixed-port tests must not run through fallback`,
   );
   return msg;
 }
@@ -131,10 +153,18 @@ async function runTests() {
 
   const server = startServer();
 
-  let passed = 0, failed = 0;
+  let passed = 0,
+    failed = 0;
   async function test(name, fn) {
-    try { await fn(); console.log(`  PASS: ${name}`); passed++; }
-    catch (e) { console.log(`  FAIL: ${name}`); console.log(`    ${e.message}`); failed++; }
+    try {
+      await fn();
+      console.log(`  PASS: ${name}`);
+      passed++;
+    } catch (e) {
+      console.log(`  FAIL: ${name}`);
+      console.log(`    ${e.message}`);
+      failed++;
+    }
   }
 
   try {
@@ -174,15 +204,28 @@ async function runTests() {
 
     await test('GET / with wrong key and valid cookie is rejected with 403', async () => {
       const res = await get('/', { key: 'wrong-token', cookie: `${COOKIE_NAME}=${TOKEN}` });
-      assert.strictEqual(res.status, 403, 'explicit wrong query key must not fall back to cookie auth');
+      assert.strictEqual(
+        res.status,
+        403,
+        'explicit wrong query key must not fall back to cookie auth',
+      );
     });
 
     await test('GET / with valid query returns bootstrap instead of screen content', async () => {
       const res = await get('/', { key: TOKEN });
       assert.strictEqual(res.status, 200);
-      assert(res.body.includes('sessionStorage'), 'bootstrap should store the session key in tab storage');
-      assert(res.body.includes('location.replace'), 'bootstrap should navigate to the bare root URL');
-      assert(!res.body.includes('Secret screen'), 'bootstrap must not serve screen HTML at the keyed URL');
+      assert(
+        res.body.includes('sessionStorage'),
+        'bootstrap should store the session key in tab storage',
+      );
+      assert(
+        res.body.includes('location.replace'),
+        'bootstrap should navigate to the bare root URL',
+      );
+      assert(
+        !res.body.includes('Secret screen'),
+        'bootstrap must not serve screen HTML at the keyed URL',
+      );
     });
 
     await test('bootstrap strips the key URL even when sessionStorage write fails', async () => {
@@ -191,7 +234,9 @@ async function runTests() {
       let replacements;
       assert.doesNotThrow(() => {
         replacements = runBootstrapScript(res.body, {
-        setItem() { throw new Error('storage blocked'); }
+          setItem() {
+            throw new Error('storage blocked');
+          },
         });
       });
       assert.deepStrictEqual(replacements, ['/']);
@@ -214,8 +259,14 @@ async function runTests() {
     await test('GET / with valid cookie (no query key) serves the screen', async () => {
       const res = await get('/', { cookie: `${COOKIE_NAME}=${TOKEN}` });
       assert.strictEqual(res.status, 200);
-      assert(res.body.includes('Secret screen'), 'cookie-authenticated bare root should serve the screen');
-      assert(!res.body.includes("location.replace('/');"), 'bare screen response should not be the bootstrap page');
+      assert(
+        res.body.includes('Secret screen'),
+        'cookie-authenticated bare root should serve the screen',
+      );
+      assert(
+        !res.body.includes("location.replace('/');"),
+        'bare screen response should not be the bootstrap page',
+      );
     });
 
     console.log('\n--- HTTP /files gate ---');
@@ -260,7 +311,7 @@ async function runTests() {
     await test('WS upgrade with valid cookie and same-origin Origin opens', async () => {
       const { outcome, ws } = await wsConnect({
         cookie: `${COOKIE_NAME}=${TOKEN}`,
-        origin: `http://localhost:${TEST_PORT}`
+        origin: `http://localhost:${TEST_PORT}`,
       });
       ws.close();
       assert.strictEqual(outcome, 'opened');
@@ -272,15 +323,25 @@ async function runTests() {
 
       const { outcome, ws } = await wsConnect({
         cookie: `${COOKIE_NAME}=${TOKEN}`,
-        origin: 'http://localhost:9999'
+        origin: 'http://localhost:9999',
       });
       if (outcome === 'opened') {
-        ws.send(JSON.stringify({ type: 'choice', choice: 'attacker-injected', text: 'local attacker probe' }));
+        ws.send(
+          JSON.stringify({
+            type: 'choice',
+            choice: 'attacker-injected',
+            text: 'local attacker probe',
+          }),
+        );
         await sleep(300);
       }
       ws.close();
 
-      assert.strictEqual(outcome, 'rejected', 'cross-origin browser WS must not open even with cookie');
+      assert.strictEqual(
+        outcome,
+        'rejected',
+        'cross-origin browser WS must not open even with cookie',
+      );
       assert(!fs.existsSync(eventsFile), 'cross-origin WS must not write state/events');
     });
 
@@ -307,4 +368,7 @@ async function runTests() {
   }
 }
 
-runTests().catch(err => { console.error('Test failed:', err); process.exit(1); });
+runTests().catch((err) => {
+  console.error('Test failed:', err);
+  process.exit(1);
+});

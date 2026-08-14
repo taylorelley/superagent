@@ -25,7 +25,7 @@ export const renderRoutingTable = (registered, { backgroundAvailable } = {}) => 
     '<SUPERAGENT_ROUTING>',
     'This session has a Superagent specialist roster. Route work to it.',
     '',
-    '**Model selection is agent selection.** OpenCode\'s `task` tool takes no',
+    "**Model selection is agent selection.** OpenCode's `task` tool takes no",
     '`model` parameter, so where `subagent-driven-development` tells you to pick a',
     'model per dispatch, pick the agent instead — each one below is already routed',
     'to the model its job deserves.',
@@ -59,7 +59,7 @@ export const renderRoutingTable = (registered, { backgroundAvailable } = {}) => 
       '`background: true` and keep going; you are notified on completion. Do not',
       'poll, sleep, or ask a running task for status. Dependent work waits for the',
       'real result — a task that stopped without reporting is not a task that',
-      'succeeded.'
+      'succeeded.',
     );
   } else {
     lines.push(
@@ -67,7 +67,7 @@ export const renderRoutingTable = (registered, { backgroundAvailable } = {}) => 
       '**Background dispatch is unavailable** in this session (it needs',
       '`OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true`). Dispatch independent work',
       'as several `task` calls in one message, and sequence dependent work. The',
-      'one-writer-per-file rule still applies.'
+      'one-writer-per-file rule still applies.',
     );
   }
 
@@ -99,7 +99,7 @@ export const renderConflicts = (conflicts) => {
     'Set `{"agents": {"prefix": "sp-"}}` in superagent.json to register the full',
     'Superagent roster alongside your own names instead of skipping them.',
     'Mention this to your human partner once, near the start of the session,',
-    'then don\'t repeat it.',
+    "then don't repeat it.",
     '</SUPERAGENT_CONFIG_CONFLICTS>',
   ].join('\n');
 };

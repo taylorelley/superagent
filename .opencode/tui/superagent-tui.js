@@ -163,7 +163,7 @@ export default {
     const h = await loadElementFactory();
     if (!h) {
       warn(
-        'could not load the OpenTUI element factory; the Superagent sidebar panel is not available'
+        'could not load the OpenTUI element factory; the Superagent sidebar panel is not available',
       );
       return;
     }
@@ -219,7 +219,7 @@ export default {
           const state = dispatchState({ hasFile, snapshot, panelVersion: version });
           debug(
             `tui panel: file=${file} mtime=${stamp} state=${state} ` +
-              `session=${sessionID} records=${records.length}`
+              `session=${sessionID} records=${records.length}`,
           );
           return renderPanel(
             {
@@ -233,7 +233,7 @@ export default {
               pluginVersion: snapshot?.pluginVersion ?? null,
               theme: context?.theme?.current ?? api?.theme?.current ?? {},
             },
-            h
+            h,
           );
         },
       },

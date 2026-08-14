@@ -41,6 +41,8 @@ export const guard = async (label, fn, fallback = undefined) => {
 };
 
 /** Wrap an OpenCode hook so a throw can never escape into the host. */
-export const guardHook = (label, fn) => async (...args) => {
-  await guard(label, () => fn(...args));
-};
+export const guardHook =
+  (label, fn) =>
+  async (...args) => {
+    await guard(label, () => fn(...args));
+  };

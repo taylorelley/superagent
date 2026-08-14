@@ -5,7 +5,9 @@
   "type": "module",
   "main": ".opencode/plugins/superagent.js",
   "scripts": {
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "format": "prettier --write '**/*.{js,mjs,cjs}'",
+    "format:check": "prettier --check '**/*.{js,mjs,cjs}'"
   },
   "exports": {
     ".": {
@@ -29,6 +31,7 @@
   ],
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.8.1"
+    "eslint": "^10.8.1",
+    "prettier": "^3.9.6"
   }
 }

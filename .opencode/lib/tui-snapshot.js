@@ -59,7 +59,10 @@ export const snapshotDir = (configDir) => path.join(configDir, 'superagent');
  */
 export const snapshotPath = (configDir, projectDir) => {
   if (!configDir) return null;
-  const key = createHash('sha256').update(path.resolve(projectDir || '.')).digest('hex').slice(0, 12);
+  const key = createHash('sha256')
+    .update(path.resolve(projectDir || '.'))
+    .digest('hex')
+    .slice(0, 12);
   return path.join(snapshotDir(configDir), `tui-${key}.json`);
 };
 
@@ -68,9 +71,7 @@ export const pruneSessions = (sessions, max = MAX_SESSIONS) => {
   const entries = Object.entries(sessions ?? {});
   if (entries.length <= max) return { ...sessions };
   return Object.fromEntries(
-    entries
-      .sort(([, a], [, b]) => (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0))
-      .slice(0, max)
+    entries.sort(([, a], [, b]) => (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0)).slice(0, max),
   );
 };
 
@@ -96,7 +97,7 @@ export const writeSnapshot = (filePath, payload) => {
     const body = `${JSON.stringify(
       { version: SNAPSHOT_VERSION, ...payload, sessions: pruneSessions(payload?.sessions) },
       null,
-      2
+      2,
     )}\n`;
     if (lastWritten.get(filePath) === body) return false;
 

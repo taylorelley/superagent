@@ -48,7 +48,9 @@ const boardFor = (sessionID) => {
 };
 
 export const truncate = (text, max = 600) => {
-  const clean = String(text ?? '').trim().replace(/\s+/g, ' ');
+  const clean = String(text ?? '')
+    .trim()
+    .replace(/\s+/g, ' ');
   return clean.length <= max ? clean : `${clean.slice(0, max)}…`;
 };
 
@@ -122,7 +124,11 @@ export const onDispatchResult = (sessionID, callID, output, settings) => {
  */
 export const onSessionEvent = (type, sessionID) => {
   if (!sessionID) return false;
-  const terminal = { 'session.idle': 'completed', 'session.error': 'error', 'session.deleted': 'cancelled' };
+  const terminal = {
+    'session.idle': 'completed',
+    'session.error': 'error',
+    'session.deleted': 'cancelled',
+  };
   const state = terminal[type];
   if (!state) return false;
 
@@ -201,10 +207,11 @@ export const renderBoard = (sessionID) => {
     '',
     '| Agent | Objective | State | Owns |',
     '|---|---|---|---|',
-    ...records.map((r) =>
-      `| ${r.agent} | ${r.objective || '—'} | ${r.state}${r.background ? ' (bg)' : ''} | ${
-        r.ownership?.write?.length ? r.ownership.write.join(', ') : '—'
-      } |`
+    ...records.map(
+      (r) =>
+        `| ${r.agent} | ${r.objective || '—'} | ${r.state}${r.background ? ' (bg)' : ''} | ${
+          r.ownership?.write?.length ? r.ownership.write.join(', ') : '—'
+        } |`,
     ),
   ];
 
@@ -214,7 +221,7 @@ export const renderBoard = (sessionID) => {
       '',
       `${unowned.length} running dispatch(es) declared no file ownership. If any of`,
       'them writes, you cannot detect a collision — declare ownership when you',
-      'dispatch write-capable work.'
+      'dispatch write-capable work.',
     );
   }
 
@@ -242,7 +249,12 @@ export const injectBoard = (messages, settings) => {
     for (const message of messages) {
       if (!Array.isArray(message.parts)) continue;
       message.parts = message.parts.filter(
-        (part) => !(part.type === 'text' && typeof part.text === 'string' && part.text.startsWith(BOARD_MARKER))
+        (part) =>
+          !(
+            part.type === 'text' &&
+            typeof part.text === 'string' &&
+            part.text.startsWith(BOARD_MARKER)
+          ),
       );
     }
   }

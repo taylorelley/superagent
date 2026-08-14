@@ -191,7 +191,8 @@ const validate = (config) => {
   if (!Array.isArray(config.council.members)) config.council.members = [];
   if (!Array.isArray(config.agents.disable)) config.agents.disable = [];
   if (!isObject(config.agents.models)) config.agents.models = { ...DEFAULTS.agents.models };
-  if (!isObject(config.agents.temperature)) config.agents.temperature = { ...DEFAULTS.agents.temperature };
+  if (!isObject(config.agents.temperature))
+    config.agents.temperature = { ...DEFAULTS.agents.temperature };
   if (!isObject(config.tui.agents)) config.tui.agents = { ...DEFAULTS.tui.agents };
   return config;
 };
@@ -205,7 +206,9 @@ const validate = (config) => {
 export const stateFilePath = (configDir) => path.join(configDir, `${CONFIG_BASENAME}.state.json`);
 
 export const loadConfig = ({ configDir, projectDir, env = process.env } = {}) => {
-  const userFile = configDir ? readConfigFile(path.join(configDir, `${CONFIG_BASENAME}.json`)) : null;
+  const userFile = configDir
+    ? readConfigFile(path.join(configDir, `${CONFIG_BASENAME}.json`))
+    : null;
   const projectFile = projectDir
     ? readConfigFile(path.join(projectDir, '.opencode', `${CONFIG_BASENAME}.json`))
     : null;
@@ -223,7 +226,10 @@ export const loadConfig = ({ configDir, projectDir, env = process.env } = {}) =>
   if (!preset.known) {
     warn(
       `unknown preset "${preset.name}"; using "${DEFAULT_PRESET}". ` +
-        `Known presets: ${Object.keys({ ...userPresets }).concat(['solo', 'team', 'council']).sort().join(', ')}`
+        `Known presets: ${Object.keys({ ...userPresets })
+          .concat(['solo', 'team', 'council'])
+          .sort()
+          .join(', ')}`,
     );
   }
 
@@ -241,6 +247,9 @@ export const loadConfig = ({ configDir, projectDir, env = process.env } = {}) =>
   // one that would otherwise be dereferenced while still null.
   const settings = validate(resolved);
   settings.preset = preset.known ? preset.name : DEFAULT_PRESET;
-  debug('resolved config', JSON.stringify({ preset: settings.preset, agents: settings.agents.enabled }));
+  debug(
+    'resolved config',
+    JSON.stringify({ preset: settings.preset, agents: settings.agents.enabled }),
+  );
   return settings;
 };
