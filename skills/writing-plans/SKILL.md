@@ -76,8 +76,42 @@ naming and copy rules, platform requirements — one line each, with exact
 values copied verbatim from the spec. Every task's requirements implicitly
 include this section.]
 
+## Task Order & Dependencies
+
+[Table of tasks: agent, dependencies, parallel-vs-serial, shared files]
+
 ---
 ```
+
+## Task Order & Dependencies
+
+Every plan MUST declare how its tasks are executed, before the task list.
+Parallelisation comes first: if the spec's tasks touch disjoint files, the
+plan says so and schedules them together. A serial edge exists only where a
+task's `Files:` or `Interfaces:` block requires an earlier task's output, or
+where two tasks modify the same path.
+
+The **one-writer-per-file rule**: two tasks that modify the same file must
+never run in parallel — serialise them or merge them. State the shared files
+explicitly so the executor can see why a task is serial.
+
+Every task names the roster agent that implements it. Model selection is agent
+selection: pick the specialist whose model the work deserves (an `implementer`
+for a scoped task, `implementer-deep` for a re-attempt, a reviewer for review
+work — a plan schedules implementation, review is the executor's job).
+
+```markdown
+## Task Order & Dependencies
+
+| Task | Agent | Depends on | Parallel with | Shared-file note |
+|---|---|---|---|---|
+| 1 — Widget | implementer | — | 2 | — |
+| 2 — Gadget | implementer | 1 | — | `src/gadget.js` also touched by 1 |
+```
+
+The table goes in the plan after the header, before the first task. If every
+task is serial, say why (shared files or sequential dependencies); do not leave
+the table out.
 
 ## Task Structure
 
