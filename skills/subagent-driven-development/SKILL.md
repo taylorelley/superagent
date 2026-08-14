@@ -218,6 +218,92 @@ that implementer. Single-file mechanical fixes also take the cheapest tier.
 - Touches multiple files with integration concerns → standard model
 - Requires design judgment or broad codebase understanding → most capable model
 
+Tier rules apply per task regardless of parallelism: a wave's implementers
+each get the model their own task deserves.
+
+## Parallel Waves
+
+Plans declare task independence in their Task Order & Dependencies table. When
+a wave of independent tasks exists, execute its members concurrently —
+per-task worktrees, background dispatch, controller merge-back.
+
+### When to parallelize
+
+All three required, else serial:
+
+1. The plan has a Task Order & Dependencies table.
+2. A wave (the maximal set of tasks with no dependencies on each other) has
+   size ≥ 2.
+3. `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` is set.
+
+Wave computation: wave 1 is the tasks with no dependencies; wave k+1 is the
+tasks whose every dependency is in waves 1..k. Before dispatching a wave,
+verify every pair of tasks in it has disjoint `Files:` blocks. An overlap is a
+plan defect: rule on it (serialize the pair, or merge them into one task),
+ledger the ruling, then proceed.
+
+### Per-task worktrees
+
+One worktree per wave task:
+
+  git worktree add .worktrees/<plan-basename>/t<N> -b <plan-basename>/t<N> <base>
+
+`base` is the feature-branch HEAD after all dependency waves are merged — a
+downstream task's tree must contain the interfaces it consumes. Run project
+setup in each worktree (per using-git-worktrees Step 2). The main checkout is
+never touched by a wave implementer.
+
+### Dispatch
+
+`background: true`, `workdir` = the task's worktree, the same dispatch
+contract as the serial loop (brief path, report path, ownership boundary,
+"commit on branch `<plan-basename>/t<N>`"). Dispatch every wave member in one
+message. The job board's ownership conflict check stays live as a second net.
+
+### Merge-back
+
+After a task's review is clean: `git merge --no-ff <plan-basename>/t<N>` into
+the feature branch. Disjoint files guarantee a clean merge. A merge conflict
+means the plan's disjoint-files claim was wrong: stop, rule, ledger, resolve
+or serialize, then continue. Merge order within a wave is unconstrained.
+
+### Review isolation
+
+The review package for task N is `wave-base..<plan-basename>/t<N>`: the task's
+own branch never contains another task's commits, so the range is exact.
+Re-reviews take FIX_BASE as the last reviewed commit on the same branch.
+
+### Fix loops and escalation
+
+Rounds 1–3 resume the same implementer in its worktree; rounds 4–5 dispatch a
+fresh implementer on a more capable model into the same worktree and branch.
+The feature branch is merged only after a task's review is clean, so an
+in-flight fix round never blocks the feature branch.
+
+### Cleanup
+
+After a task's branch merges and its review is clean:
+
+  git worktree remove .worktrees/<plan-basename>/t<N>
+  git branch -d <plan-basename>/t<N>
+
+`git worktree prune` after the wave completes.
+
+### Why not one shared tree
+
+Parallel implementers on one branch interleave commits, which breaks
+per-task review ranges, and two tasks touching the same file both succeed —
+with one silently losing work. Per-task branches make ownership violations
+loud merge conflicts and keep every review range exact.
+
+### Efficiency
+
+A wave of k tasks costs ≈ max(task times) + k × (worktree setup + merge +
+review) in wall-clock, instead of the sum of task times serially. The win is
+real when tasks are model-turn-bound; provider rate limits may throttle
+concurrency — that is an environment fact, not a reason to serialize the
+design.
+
 ## The Task Loop
 
 **Batch small same-shape work.** When the plan lists several tasks that are
@@ -242,6 +328,9 @@ line of status and reconcile your live children: list them, and chase
 any that finished without reporting. A bounded stretch keeps nearly
 all of a long wait's efficiency while guaranteeing a stuck or lost
 child is noticed within minutes, not at the end of the session.
+
+With background dispatches running concurrently, process each report as it
+lands; do not reorder the ledger to wait for the slowest task in a wave.
 
 ### 1. Dispatch the implementer
 
@@ -279,7 +368,10 @@ and fix-round diffs need it.
   a pointer to that ledger entry in the dispatch.
 - Record the implementer's agent identity from the dispatch result —
   fix-loop rounds 1-3 resume this agent.
-- Never dispatch multiple implementation subagents in parallel (conflicts).
+- Never dispatch multiple implementation subagents into the same working tree
+  or onto the same branch. Parallel execution is allowed only as Parallel
+  Waves (below): per-task worktrees, background dispatch, controller
+  merge-back.
 
 Template: [implementer-prompt.md](implementer-prompt.md)
 
