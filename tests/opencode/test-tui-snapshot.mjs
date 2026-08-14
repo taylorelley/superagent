@@ -79,13 +79,29 @@ test('a snapshot round-trips', () => {
   const file = snapshotPath(dir, '/work/alpha');
   const records = [{ agent: 'implementer', objective: 'work', state: 'running', owns: ['src/**'] }];
 
-  assert.equal(writeSnapshot(file, { directory: '/work/alpha', sessions: { s1: session(records) } }), true);
+  assert.equal(
+    writeSnapshot(file, {
+      directory: '/work/alpha',
+      pluginVersion: '0.1.0',
+      sessions: { s1: session(records) },
+    }),
+    true
+  );
 
   const read = readSnapshot(file);
   assert.equal(read.version, SNAPSHOT_VERSION);
+  assert.equal(read.pluginVersion, '0.1.0');
   assert.equal(read.directory, '/work/alpha');
   assert.deepEqual(sessionRecords(read, 's1'), records);
   assert.deepEqual(sessionRecords(read, 'missing'), [], 'an unknown session is empty, not an error');
+});
+
+test('a version-1 snapshot from an older plugin copy is rejected', () => {
+  const dir = tempDir();
+  const file = path.join(dir, 'old.json');
+  fs.writeFileSync(file, JSON.stringify({ version: 1, sessions: { s1: session() } }));
+
+  assert.equal(readSnapshot(file), null, 'an old format is not read as the current one');
 });
 
 test('writing an unchanged board does no work', () => {

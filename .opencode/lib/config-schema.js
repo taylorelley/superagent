@@ -110,6 +110,8 @@ export const DEFAULTS = {
      * does anything for a user who registered it there. See docs/superagent.md.
      */
     enabled: true,
+    /** Render the full roster instead of the collapsed summary. */
+    agents: { expanded: false },
   },
 };
 
@@ -190,6 +192,7 @@ const validate = (config) => {
   if (!Array.isArray(config.agents.disable)) config.agents.disable = [];
   if (!isObject(config.agents.models)) config.agents.models = { ...DEFAULTS.agents.models };
   if (!isObject(config.agents.temperature)) config.agents.temperature = { ...DEFAULTS.agents.temperature };
+  if (!isObject(config.tui.agents)) config.tui.agents = { ...DEFAULTS.tui.agents };
   return config;
 };
 

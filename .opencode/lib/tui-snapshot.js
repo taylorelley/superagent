@@ -29,11 +29,22 @@ import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
 import { warn, debug } from './log.js';
+import { packageRoot } from './paths.js';
 
-export const SNAPSHOT_VERSION = 1;
+export const SNAPSHOT_VERSION = 2;
 
 /** Sessions retained per project. Older ones are dropped on write. */
 export const MAX_SESSIONS = 20;
+
+/** This package's own version; null when it cannot be read. */
+export const readVersion = (root = packageRoot) => {
+  try {
+    const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    return typeof version === 'string' && version ? version : null;
+  } catch {
+    return null;
+  }
+};
 
 /** Directory holding every project's snapshot, under OpenCode's config dir. */
 export const snapshotDir = (configDir) => path.join(configDir, 'superagent');

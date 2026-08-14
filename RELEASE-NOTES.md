@@ -1,5 +1,10 @@
 # Superpowers Release Notes
 
+## v0.1.0 (2026-08-14)
+
+First versioned release of the OpenCode-only fork. Version numbering restarts
+from upstream's 6.3.0: this is a fork of Superpowers, not a continuation of it.
+
 ## v6.3.0 (2026-08-12)
 
 ### Harness Support

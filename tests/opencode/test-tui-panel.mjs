@@ -78,14 +78,14 @@ const dispatch = (over = {}) => ({
 test('the identity line reports version, preset, and which subsystems are on', () => {
   const text = lines(
     render({
-      version: '6.3.0',
+      version: '0.1.0',
       preset: 'team',
       subsystems: { agents: true, board: false, council: true },
     })
   );
 
   assert.ok(text.includes('Superagent'));
-  assert.ok(text.includes('v6.3.0'));
+  assert.ok(text.includes('v0.1.0'));
   assert.ok(
     text.some((line) => line.includes('team') && line.includes('agents on') && line.includes('board off')),
     `expected a subsystem summary, got ${JSON.stringify(text)}`
@@ -107,8 +107,38 @@ test('a panel with nothing to report still renders', () => {
 
 // -------------------------------------------------------------------- agents
 
+test('agents are collapsed by default: header count plus routed slots only', () => {
+  const text = lines(
+    render({
+      agents: [
+        { name: 'implementer', model: null },
+        { name: 'oracle', model: 'anthropic/claude-opus-4-1' },
+      ],
+    })
+  );
+
+  assert.ok(text.includes('oracle'), 'the routed slot is the exception worth showing');
+  assert.ok(!text.includes('implementer'), 'an inheriting slot is hidden when collapsed');
+  assert.ok(text.some((line) => line.includes('1 collapsed')), 'the hidden count is stated');
+});
+
+test('expanding via config shows the full roster, capped as before', () => {
+  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
+    name: `agent-${i}`,
+    model: null,
+  }));
+  const text = lines(render({ agents, agentsExpanded: true }));
+
+  assert.equal(text.filter((line) => line.includes('agent-')).length, MAX_AGENT_ROWS);
+  assert.ok(text.includes('+3 more'));
+});
+
+test('an empty roster still says none registered, collapsed or not', () => {
+  assert.ok(lines(render({ agents: [] })).some((line) => line.includes('none registered')));
+});
+
 test('an unrouted slot says it inherits rather than showing nothing', () => {
-  const text = lines(render({ agents: [{ name: 'implementer', model: null }] }));
+  const text = lines(render({ agents: [{ name: 'implementer', model: null }], agentsExpanded: true }));
   assert.ok(text.includes('implementer'));
   assert.ok(text.includes('inherit'));
 });
@@ -116,6 +146,7 @@ test('an unrouted slot says it inherits rather than showing nothing', () => {
 test('routed agents sort first and lose their provider prefix', () => {
   const text = lines(
     render({
+      agentsExpanded: true,
       agents: [
         { name: 'implementer', model: null },
         { name: 'oracle', model: 'anthropic/claude-opus-4-1' },
@@ -133,9 +164,9 @@ test('a long roster is capped so the panel cannot outgrow the sidebar', () => {
     name: `agent-${i}`,
     model: null,
   }));
-  const text = lines(render({ agents }));
+  const text = lines(render({ agents, agentsExpanded: true }));
 
-  assert.equal(text.filter((line) => line.startsWith('agent-')).length, MAX_AGENT_ROWS);
+  assert.equal(text.filter((line) => line.includes('agent-')).length, MAX_AGENT_ROWS);
   assert.ok(text.includes('+3 more'));
 });
 
@@ -146,6 +177,22 @@ test('agents off means no roster, not an empty one', () => {
 });
 
 // ---------------------------------------------------------------- dispatches
+
+test('a missing snapshot says so instead of pretending there were no dispatches', () => {
+  const text = lines(render({ snapshotState: 'none' }));
+  assert.ok(text.some((line) => line.includes('no snapshot yet')));
+  assert.ok(!text.some((line) => line.includes('none this session')));
+});
+
+test('an incompatible snapshot is named as such', () => {
+  const text = lines(render({ snapshotState: 'incompatible' }));
+  assert.ok(text.some((line) => line.includes('different plugin version')));
+});
+
+test('a server/panel version mismatch names both versions', () => {
+  const text = lines(render({ snapshotState: 'version-mismatch', pluginVersion: '6.3.0', version: '0.1.0' }));
+  assert.ok(text.some((line) => line.includes('6.3.0') && line.includes('0.1.0')));
+});
 
 test('the dispatch header counts what is running against the total', () => {
   const text = lines(
@@ -166,8 +213,10 @@ test('running dispatches come first, then the most recently finished', () => {
     })
   );
 
-  assert.ok(text.indexOf('live') < text.indexOf('recent'));
-  assert.ok(text.indexOf('recent') < text.indexOf('old'));
+  // Rows are prefixed with a state glyph, so match on a substring.
+  const pos = (needle) => text.findIndex((line) => line.includes(needle));
+  assert.ok(pos('live') < pos('recent'));
+  assert.ok(pos('recent') < pos('old'));
 });
 
 test('a running dispatch shows its objective and what it owns; a finished one does not', () => {
@@ -220,13 +269,22 @@ test('long detail lines are truncated to the column, not wrapped', () => {
   );
 });
 
+test('dispatch states carry a glyph so outcome reads without scanning colours', () => {
+  const text = lines(
+    render({ records: [dispatch({ state: 'running' }), dispatch({ state: 'completed' }), dispatch({ state: 'error' })] })
+  );
+  assert.ok(text.some((line) => line.includes('●')));
+  assert.ok(text.some((line) => line.includes('✓')));
+  assert.ok(text.some((line) => line.includes('✗')));
+});
+
 test('a busy session is capped and says how much it is hiding', () => {
   const records = Array.from({ length: MAX_DISPATCH_ROWS + 4 }, (_, i) =>
     dispatch({ agent: `agent-${i}`, endedAt: i })
   );
   const text = lines(render({ records }));
 
-  assert.equal(text.filter((line) => line.startsWith('agent-')).length, MAX_DISPATCH_ROWS);
+  assert.equal(text.filter((line) => line.includes('agent-')).length, MAX_DISPATCH_ROWS);
   assert.ok(text.includes('+4 more'));
 });
 

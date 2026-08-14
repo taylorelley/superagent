@@ -28,13 +28,14 @@
  */
 
 import fs from 'fs';
-import path from 'path';
-import { packageRoot, resolveConfigDir } from '../lib/paths.js';
+import { resolveConfigDir } from '../lib/paths.js';
 import { loadConfig } from '../lib/config-schema.js';
 import { ROSTER } from '../lib/roster.js';
 import { renderPanel } from '../lib/tui-panel.js';
 import { snapshotPath, readSnapshot, sessionRecords } from '../lib/tui-snapshot.js';
 import { debug, warn } from '../lib/log.js';
+
+export { readVersion } from '../lib/tui-snapshot.js';
 
 /** How often the board snapshot is re-checked. Slim uses the same cadence. */
 const POLL_MS = 1000;
@@ -76,16 +77,6 @@ export const loadElementFactory = async (specifiers = SOLID_SPECIFIERS) => {
     }
   }
   return null;
-};
-
-/** This package's own version, which is what the panel is reporting. */
-export const readVersion = (root = packageRoot) => {
-  try {
-    const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-    return typeof version === 'string' && version ? version : null;
-  } catch {
-    return null;
-  }
 };
 
 /**
@@ -134,6 +125,23 @@ export const currentSessionID = (api, props, snapshot) => {
   return props?.session_id ?? newestSessionID(snapshot);
 };
 
+/**
+ * Why the Dispatches section is (or is not) showing records.
+ *
+ * `readSnapshot` returns null both when there is no file and when the file is
+ * from an incompatible format, so `hasFile` (mtime > 0) disambiguates them.
+ * A payload whose server plugin version differs from this panel's copy is the
+ * version-skew case the docs warn about — visible here, not silent.
+ */
+export const dispatchState = ({ hasFile, snapshot, panelVersion }) => {
+  if (!hasFile) return 'none';
+  if (!snapshot) return 'incompatible';
+  if (snapshot.pluginVersion && panelVersion && snapshot.pluginVersion !== panelVersion) {
+    return 'version-mismatch';
+  }
+  return 'ok';
+};
+
 export default {
   id: 'superagent:tui',
 
@@ -171,7 +179,8 @@ export default {
 
     let file = snapshotPath(configDir, directory);
     let stamp = mtimeOf(file);
-    let snapshot = stamp ? readSnapshot(file) : null;
+    let hasFile = stamp > 0;
+    let snapshot = hasFile ? readSnapshot(file) : null;
 
     // Only re-parse when the file actually moved, and only ask for a repaint
     // when something changed: this runs for the life of the session, next to a
@@ -183,7 +192,8 @@ export default {
       if (next === file && mtime === stamp) return;
       file = next;
       stamp = mtime;
-      snapshot = mtime ? readSnapshot(next) : null;
+      hasFile = mtime > 0;
+      snapshot = hasFile ? readSnapshot(next) : null;
       api?.renderer?.requestRender?.();
     };
 
@@ -197,18 +207,29 @@ export default {
         // The argument is the slot context the host renders with, not the slot
         // props the type declares — `{ theme }`, live, so it is preferred over
         // the api's copy.
-        sidebar_content: (context) =>
-          renderPanel(
+        sidebar_content: (context) => {
+          const sessionID = currentSessionID(api, context, snapshot);
+          const records = sessionRecords(snapshot, sessionID);
+          const state = dispatchState({ hasFile, snapshot, panelVersion: version });
+          debug(
+            `tui panel: file=${file} mtime=${stamp} state=${state} ` +
+              `session=${sessionID} records=${records.length}`
+          );
+          return renderPanel(
             {
               version,
               preset: settings.preset,
               subsystems,
               agents: panelAgents(settings, api?.state?.config),
-              records: sessionRecords(snapshot, currentSessionID(api, context, snapshot)),
+              agentsExpanded: settings.tui?.agents?.expanded === true,
+              records,
+              snapshotState: state,
+              pluginVersion: snapshot?.pluginVersion ?? null,
               theme: context?.theme?.current ?? api?.theme?.current ?? {},
             },
             h
-          ),
+          );
+        },
       },
     });
 
