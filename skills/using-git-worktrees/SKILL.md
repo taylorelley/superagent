@@ -156,6 +156,16 @@ Ready to implement <feature-name>
 | Tests fail during baseline | Report failures + ask |
 | No package.json/Cargo.toml | Skip dependency install |
 
+## Per-task parallel worktrees
+
+When the controller runs independent plan tasks concurrently (see
+subagent-driven-development §Parallel Waves), each task gets its own worktree
+at `.worktrees/<plan-basename>/t<N>` on branch `<plan-basename>/t<N>`, created
+from the feature-branch HEAD after all dependency waves are merged. The
+implementer works only in that worktree; the controller merges the branch back
+after the task's review passes, then removes the worktree and deletes the
+branch.
+
 ## Common Rationalizations
 
 | Excuse | Reality |
