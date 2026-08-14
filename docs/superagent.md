@@ -263,6 +263,18 @@ notified as each finishes. Without it, the routing table tells it to issue
 several `task` calls in one message instead, and the one-writer-per-file rule
 still applies. A plugin cannot enable this itself.
 
+## Parallel dispatch
+
+When a plan declares independent tasks (its Task Order & Dependencies table —
+see `skills/writing-plans`) and background subagents are enabled, SDD executes
+each wave concurrently: every task gets its own git worktree at
+`.worktrees/<plan>/t<N>` on its own branch, is dispatched with
+`background: true`, and the controller merges each branch back into the
+feature branch after its review passes. A merge conflict means the plan's
+disjoint-files claim was wrong — surfaced loudly as a plan defect rather than
+a silent overwrite. Without the flag, a wave of one, or no table, SDD runs
+serially as before.
+
 ## The council
 
 `/council <question>` asks several models the same question in parallel and
