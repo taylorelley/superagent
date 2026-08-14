@@ -90,6 +90,8 @@ export const renderPanel = (model, h) => {
     agents = [],
     records = [],
     theme = {},
+    snapshotState = 'ok',
+    pluginVersion = null,
   } = model ?? {};
 
   const muted = (content) => h.text({ fg: theme.textMuted }, [content]);
@@ -133,7 +135,13 @@ export const renderPanel = (model, h) => {
     ])
   );
 
-  if (!records.length) {
+  if (snapshotState === 'none') {
+    children.push(muted('no snapshot yet — nothing dispatched'));
+  } else if (snapshotState === 'incompatible') {
+    children.push(muted('snapshot from a different plugin version'));
+  } else if (snapshotState === 'version-mismatch') {
+    children.push(muted(`server v${pluginVersion} ≠ panel v${version}`));
+  } else if (!records.length) {
     children.push(muted('none this session'));
   } else {
     const ordered = orderRecords(records);

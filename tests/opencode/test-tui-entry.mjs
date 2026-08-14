@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 
 import entry, {
   currentSessionID,
+  dispatchState,
   elementFactory,
   loadElementFactory,
   newestSessionID,
@@ -154,6 +155,22 @@ test('the current session comes from the route when there is one', () => {
 test('newestSessionID has nothing to pick from an empty snapshot', () => {
   assert.equal(newestSessionID(null), null);
   assert.equal(newestSessionID({ sessions: {} }), null);
+});
+
+// ------------------------------------------------------------ dispatch state
+
+test('dispatchState distinguishes no file, incompatible, mismatch, and ok', () => {
+  assert.equal(dispatchState({ hasFile: false, snapshot: null, panelVersion: '0.1.0' }), 'none');
+  assert.equal(dispatchState({ hasFile: true, snapshot: null, panelVersion: '0.1.0' }), 'incompatible');
+  assert.equal(
+    dispatchState({ hasFile: true, snapshot: { pluginVersion: '0.1.0' }, panelVersion: '0.2.0' }),
+    'version-mismatch'
+  );
+  assert.equal(
+    dispatchState({ hasFile: true, snapshot: { pluginVersion: '0.1.0' }, panelVersion: '0.1.0' }),
+    'ok'
+  );
+  assert.equal(dispatchState({ hasFile: true, snapshot: {}, panelVersion: '0.1.0' }), 'ok', 'no server version means no comparison');
 });
 
 // ------------------------------------------------------------ registration

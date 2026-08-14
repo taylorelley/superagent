@@ -147,6 +147,22 @@ test('agents off means no roster, not an empty one', () => {
 
 // ---------------------------------------------------------------- dispatches
 
+test('a missing snapshot says so instead of pretending there were no dispatches', () => {
+  const text = lines(render({ snapshotState: 'none' }));
+  assert.ok(text.some((line) => line.includes('no snapshot yet')));
+  assert.ok(!text.some((line) => line.includes('none this session')));
+});
+
+test('an incompatible snapshot is named as such', () => {
+  const text = lines(render({ snapshotState: 'incompatible' }));
+  assert.ok(text.some((line) => line.includes('different plugin version')));
+});
+
+test('a server/panel version mismatch names both versions', () => {
+  const text = lines(render({ snapshotState: 'version-mismatch', pluginVersion: '6.3.0', version: '0.1.0' }));
+  assert.ok(text.some((line) => line.includes('6.3.0') && line.includes('0.1.0')));
+});
+
 test('the dispatch header counts what is running against the total', () => {
   const text = lines(
     render({ records: [dispatch({ state: 'running' }), dispatch(), dispatch()] })
