@@ -1,0 +1,43 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  plugin-tests:
+    name: Plugin tests (tests/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Belt-and-suspenders: don't rely on the runner image happening to
+      # ship a jq new enough for strenv() or a graphviz new enough for the
+      # writing-skills fixture, since both tests fail confusingly otherwise.
+      - name: Install test-only system tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq graphviz
+
+      - name: OpenCode plugin tests
+        run: bash tests/opencode/run-tests.sh
+
+      - name: Shell lint self-tests
+        run: bash tests/shell-lint/test-lint-shell.sh
+
+      - name: Version-bump script tests
+        run: bash tests/version-bump/test-bump-version.sh
+
+      - name: systematic-debugging find-polluter tests
+        run: bash tests/systematic-debugging/test-find-polluter.sh
+
+      - name: writing-skills graph renderer tests
+        run: bash tests/writing-skills/test-render-graphs.sh
+
+      - name: brainstorm-server tests
+        run: |
+          npm --prefix tests/brainstorm-server install
+          npm --prefix tests/brainstorm-server test
