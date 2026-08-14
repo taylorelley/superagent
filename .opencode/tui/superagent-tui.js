@@ -221,6 +221,7 @@ export default {
               preset: settings.preset,
               subsystems,
               agents: panelAgents(settings, api?.state?.config),
+              agentsExpanded: settings.tui?.agents?.expanded === true,
               records,
               snapshotState: state,
               pluginVersion: snapshot?.pluginVersion ?? null,

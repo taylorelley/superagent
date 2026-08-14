@@ -55,6 +55,13 @@ const STATE_COLOR = {
   cancelled: 'textMuted',
 };
 
+const STATE_GLYPH = {
+  running: '●',
+  completed: '✓',
+  error: '✗',
+  cancelled: '○',
+};
+
 const onOff = (value) => (value ? 'on' : 'off');
 
 /**
@@ -88,6 +95,7 @@ export const renderPanel = (model, h) => {
     preset = 'unknown',
     subsystems = {},
     agents = [],
+    agentsExpanded = false,
     records = [],
     theme = {},
     snapshotState = 'ok',
@@ -103,9 +111,6 @@ export const renderPanel = (model, h) => {
       h.text({ fg: rightColor }, [right]),
     ]);
 
-  const heading = (label) =>
-    h.box({ width: '100%', marginTop: 1 }, [h.text({ fg: theme.text }, [label])]);
-
   const children = [
     // Identity. The version answers "did my update land", the preset answers
     // "why is it behaving like that" — both otherwise cost a turn to ask.
@@ -118,19 +123,35 @@ export const renderPanel = (model, h) => {
         (subsystems.council ? ' · council on' : '')
     ),
 
-    heading('Agents'),
-    ...(agents.length
-      ? orderAgents(agents)
-          .slice(0, MAX_AGENT_ROWS)
-          .map((agent) => pair(agent.name, shortModel(agent.model) || INHERIT))
-      : [muted('none registered')]),
-    ...(agents.length > MAX_AGENT_ROWS ? [muted(`+${agents.length - MAX_AGENT_ROWS} more`)] : []),
+    h.box({ width: '100%', flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 }, [
+      h.text({ fg: theme.accent }, ['Agents']),
+      h.text({ fg: theme.textMuted }, [String(agents.length)]),
+    ]),
+    ...(agents.length === 0
+      ? [muted('none registered')]
+      : agentsExpanded
+        ? [
+            ...orderAgents(agents)
+              .slice(0, MAX_AGENT_ROWS)
+              .map((agent) => pair(agent.name, shortModel(agent.model) || INHERIT)),
+            ...(agents.length > MAX_AGENT_ROWS
+              ? [muted(`+${agents.length - MAX_AGENT_ROWS} more`)]
+              : []),
+          ]
+        : [
+            ...agents
+              .filter((agent) => agent.model)
+              .map((agent) => pair(agent.name, shortModel(agent.model))),
+            ...(agents.length - agents.filter((agent) => agent.model).length > 0
+              ? [muted(`+${agents.length - agents.filter((agent) => agent.model).length} collapsed`)]
+              : []),
+          ]),
   ];
 
   const running = records.filter((r) => r.state === 'running');
   children.push(
     h.box({ width: '100%', flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 }, [
-      h.text({ fg: theme.text }, ['Dispatches']),
+      h.text({ fg: theme.accent }, ['Dispatches']),
       h.text({ fg: theme.textMuted }, [records.length ? `${running.length}/${records.length}` : '—']),
     ])
   );
@@ -148,7 +169,7 @@ export const renderPanel = (model, h) => {
     for (const record of ordered.slice(0, MAX_DISPATCH_ROWS)) {
       children.push(
         pair(
-          record.agent ?? 'unknown',
+          `${STATE_GLYPH[record.state] ?? ''} ${record.agent ?? 'unknown'}`,
           `${record.state}${record.background ? ' (bg)' : ''}`,
           theme[STATE_COLOR[record.state] ?? 'textMuted'] ?? theme.textMuted
         )
