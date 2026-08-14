@@ -130,8 +130,6 @@ async function runTests() {
   fs.writeFileSync(path.join(CONTENT_DIR, 'asset.txt'), 'secret asset');
 
   const server = startServer();
-  let stdoutAccum = '';
-  server.stdout.on('data', (d) => { stdoutAccum += d.toString(); });
 
   let passed = 0, failed = 0;
   async function test(name, fn) {

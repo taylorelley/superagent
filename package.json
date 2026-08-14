@@ -4,6 +4,9 @@
   "description": "Superagent skills and runtime bootstrap for OpenCode",
   "type": "module",
   "main": ".opencode/plugins/superagent.js",
+  "scripts": {
+    "lint": "eslint ."
+  },
   "exports": {
     ".": {
       "import": "./.opencode/plugins/superagent.js"
@@ -23,5 +26,9 @@
     "debugging",
     "collaboration",
     "workflow"
-  ]
+  ],
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.1"
+  }
 }

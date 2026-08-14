@@ -105,7 +105,7 @@ function ensureSymlinkWorks(target, link) {
     fs.symlinkSync(target, link);
     fs.unlinkSync(link);
   } catch (e) {
-    try { fs.unlinkSync(link); } catch (ignore) {}
+    try { fs.unlinkSync(link); } catch {}
     skip(`symlink creation unavailable on this host: ${e.message}`);
   }
 }
@@ -261,7 +261,7 @@ async function runTests() {
     await test('does not serve symlinks that escape content dir via /files/', async () => {
       const target = path.join(STATE_DIR, 'server-info');
       const link = path.join(CONTENT_DIR, 'linked-server-info.txt');
-      try { fs.unlinkSync(link); } catch (e) {}
+      try { fs.unlinkSync(link); } catch {}
       ensureSymlinkWorks(target, link);
       fs.symlinkSync(target, link);
 
@@ -273,7 +273,7 @@ async function runTests() {
     await test('does not serve hard links to files outside content dir via /files/', async () => {
       const target = path.join(STATE_DIR, 'server-info');
       const link = path.join(CONTENT_DIR, 'hard-linked-server-info.txt');
-      try { fs.unlinkSync(link); } catch (e) {}
+      try { fs.unlinkSync(link); } catch {}
       fs.linkSync(target, link);
 
       const res = await fetch(`http://localhost:${TEST_PORT}/files/hard-linked-server-info.txt`);
@@ -284,7 +284,7 @@ async function runTests() {
     await test('does not serve symlinks that escape content dir via root screen selection', async () => {
       const target = path.join(STATE_DIR, 'server-info');
       const link = path.join(CONTENT_DIR, 'root-linked-server-info.html');
-      try { fs.unlinkSync(link); } catch (e) {}
+      try { fs.unlinkSync(link); } catch {}
       ensureSymlinkWorks(target, link);
       fs.symlinkSync(target, link);
       const future = new Date(Date.now() + 2000);
@@ -300,7 +300,7 @@ async function runTests() {
     await test('does not serve hard links that escape content dir via root screen selection', async () => {
       const target = path.join(STATE_DIR, 'server-info');
       const link = path.join(CONTENT_DIR, 'root-hard-linked-server-info.html');
-      try { fs.unlinkSync(link); } catch (e) {}
+      try { fs.unlinkSync(link); } catch {}
       try {
         fs.linkSync(target, link);
       } catch (e) {

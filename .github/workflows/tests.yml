@@ -66,7 +66,8 @@ jobs:
       # Zero-dependency syntax sanity for every tracked JS/MJS/CJS file.
       # `node --test` already parses whatever it imports, so this exists to
       # catch a syntax error in a module that happens not to be reachable
-      # from any test today.
+      # from any test today. Cheap and dependency-free, so it stays even
+      # though ESLint below is a strict superset of it.
       - name: Syntax-check JS files
         run: |
           status=0
@@ -75,14 +76,23 @@ jobs:
           done < <(git ls-files -z '*.js' '*.mjs' '*.cjs')
           exit "$status"
 
-      # Deliberately not run here:
-      #   - shfmt formatting: scripts/lint-shell.sh's own --format flag is
-      #     opt-in (it rewrites files), and several tracked scripts predate
-      #     shfmt's default style — enforcing it in CI would fail on files
-      #     unrelated to whatever a PR actually changed, stricter than the
-      #     project's own convention.
-      #   - ESLint/Prettier: would add a devDependency, which conflicts
-      #     with this repo's zero-dependency-by-design policy (AGENTS.md).
-      #   - A static security scanner (e.g. opengrep/semgrep): used ad hoc
-      #     by past contributors per commit history, but no config or
-      #     verified-clean baseline exists in-repo to wire into CI safely.
+      - run: npm ci
+
+      # eslint.config.js models this repo's real module boundaries (root
+      # ESM, tests/brainstorm-server's own CommonJS package.json, the
+      # browser-served helper.js) instead of one blanket ruleset, and
+      # allows the empty-catch "best effort" idiom this codebase uses
+      # deliberately and repeatedly rather than demanding a placeholder
+      # comment at every call site. Verified clean against the full tree
+      # before being wired in here.
+      - name: ESLint
+        run: npm run lint
+
+      # Deliberately not run here: shfmt formatting. scripts/lint-shell.sh's
+      # own --format flag is opt-in (it rewrites files), and several tracked
+      # scripts predate shfmt's default style — enforcing it in CI would
+      # fail on files unrelated to whatever a PR actually changed, stricter
+      # than the project's own convention. A static security scanner (e.g.
+      # opengrep/semgrep) is also not included: used ad hoc by past
+      # contributors per commit history, but no config or verified-clean
+      # baseline exists in-repo to wire into CI safely yet.

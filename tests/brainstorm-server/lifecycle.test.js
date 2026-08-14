@@ -160,7 +160,7 @@ async function runTests() {
       assert.strictEqual(code, 0, 'should exit cleanly (0)');
       assert(fs.existsSync(path.join(dir, 'state', 'server-stopped')), 'should write server-stopped');
     } finally {
-      try { ws.close(); } catch (e) {}
+      try { ws.close(); } catch {}
       if (!exited) await killAndWait(srv);
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -168,7 +168,7 @@ async function runTests() {
 
   await test('start-server.sh --idle-timeout-minutes sets the timeout', async () => {
     const dir = makeShellTempDir('bs-life');
-    let info = null;
+    let info;
     let startProcess = null;
     let sessionDir = null;
     try {
@@ -313,7 +313,7 @@ async function runTests() {
       assert.strictEqual(infoB.port, infoA.port, 'restart should reuse same port');
       assert(opened, 'stored key should authenticate WS after restart');
     } finally {
-      try { if (ws) ws.close(); } catch (e) {}
+      try { if (ws) ws.close(); } catch {}
       await killAndWait(a);
       await killAndWait(b);
       fs.rmSync(dir, { recursive: true, force: true });

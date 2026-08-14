@@ -33,6 +33,7 @@ import { registerCouncillors } from '../lib/council.js';
 import { registerCommands, expandCommand } from '../lib/commands.js';
 import { guardHook, debug } from '../lib/log.js';
 
+// eslint-disable-next-line no-unused-vars -- part of OpenCode's plugin factory signature
 export const SuperagentPlugin = async ({ client, directory }) => {
   const configDir = resolveConfigDir();
   const settings = loadConfig({ configDir, projectDir: directory });
