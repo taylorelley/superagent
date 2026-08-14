@@ -105,7 +105,7 @@ work — a plan schedules implementation, review is the executor's job).
 
 | Task | Agent | Depends on | Parallel with | Shared-file note |
 |---|---|---|---|---|
-| 1 — Widget | implementer | — | 2 | — |
+| 1 — Widget | implementer | — | — | — |
 | 2 — Gadget | implementer | 1 | — | `src/gadget.js` also touched by 1 |
 ```
 
