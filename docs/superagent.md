@@ -168,22 +168,20 @@ much use to the human at the keyboard.
 So Superagent also renders a panel into OpenCode's TUI sidebar:
 
 ```text
- Superagent                  v6.3.0
+ Superagent                  v0.1.0
  team · agents on · board on
 
- Agents
- superagent                 inherit
- implementer                inherit
- …
- +2 more
+ Agents                          10
+ oracle               claude-opus-4-1
+ +9 collapsed
 
  Dispatches                     2/6
- code-reviewer              running
+ ● code-reviewer              running
    Review task 3 against the plan
- implementer           running (bg)
+ ● implementer           running (bg)
    Add the failing test for snaps…
    owns .opencode/lib/**
- librarian                completed
+ ✓ librarian                completed
  +1 more
 ```
 
@@ -196,6 +194,24 @@ Both lists are capped, because a panel that outgrows the sidebar is silently
 clipped from the bottom, which is where the live section is. Turn the panel off
 with `{"tui": {"enabled": false}}`, or with `SUPERAGENT_DISABLE=1`, which turns
 off everything.
+
+The roster is **collapsed by default**: the Agents header carries the count and
+only the routed (non-inherit) slots are listed, since a pinned model is the
+part a reader cannot guess. The `+N collapsed` line says how many are hidden.
+To list the full roster, set `{"tui": {"agents": {"expanded": true}}}` in
+`superagent.json`. Dispatches are always expanded — they are the live section.
+
+Dispatch states carry glyphs so an outcome reads at a glance: `●` running,
+`✓` completed, `✗` error, `○` cancelled.
+
+The Dispatches section can tell you why it is empty:
+
+| State | Meaning |
+|---|---|
+| `no snapshot yet — nothing dispatched` | No dispatch has been recorded yet in this project. |
+| `snapshot from a different plugin version` | The snapshot file is from an older Superagent copy (snapshot format mismatch). |
+| `server vX ≠ panel vY` | The server plugin and the TUI plugin are different versions — the sidebar cannot trust the server's data. Point `opencode.json` and `tui.json` at the same source. |
+| `none this session` | The bridge works; this session simply has no dispatches. |
 
 ### Registering it
 
@@ -296,6 +312,14 @@ in OpenCode; they can work in-session while missing from that listing.
 Set `agents.prefix`.
 
 **More detail.** `SUPERAGENT_DEBUG=1`.
+
+**The Dispatches section stays empty.** If it names a version mismatch
+(`server v… ≠ panel v…`), the server and TUI plugin copies differ — list the
+same source in `opencode.json` and `tui.json`, restart, and re-dispatch. If it
+says `no snapshot yet`, dispatch something; if it says `none this session`,
+the bridge works and this session has simply not dispatched. Run with
+`SUPERAGENT_DEBUG=1` for the panel's per-render log line (file, mtime, session,
+record count, state).
 
 ---
 
@@ -517,7 +541,7 @@ dispatch — and does *not* appear on the child session.
 
 **The sidebar panel renders.** Run against `opencode-ai@1.18.18`, with the
 package registered in both `opencode.json` and `tui.json`. The panel appears in
-the session sidebar showing `Superagent v6.3.0`, the active preset, the
+the session sidebar showing `Superagent v0.1.0`, the active preset, the
 subsystem line, the roster capped at eight with `+2 more`, and — from a snapshot
 written for that session — running dispatches first with their objectives and
 `owns` lines, finished ones on a single line, and `+1 more`. The virtual

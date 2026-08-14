@@ -124,25 +124,38 @@ For a reproducible install, append a full commit SHA instead.
 2. Verify the plugin line in your `opencode.json`
 3. Make sure you're running a recent version of OpenCode
 
-### Windows install issues
+### Git-backed plugin specs fail to resolve
 
-Some Windows OpenCode builds have upstream installer issues with git-backed
-plugin specs, including cache paths for `git+https` URLs and Bun not finding
-`git.exe` even when it works in a normal terminal. If OpenCode cannot install
-the plugin, try installing with system npm and pointing OpenCode at the local
-package:
+OpenCode installs git-backed specs (`superagent@git+https://…`) through its own
+plugin manager, and some OpenCode/Bun versions pin or cache the resolved
+dependency. Symptoms: the plugin fails to load in `opencode.json`, the TUI
+panel never appears, or the two sides load different versions. The reliable
+workaround is to install with npm and point OpenCode at the local package:
 
-```powershell
-npm install superagent@git+https://github.com/taylorelley/superagent.git --prefix "$HOME\.config\opencode"
+```bash
+npm install superagent@git+https://github.com/taylorelley/superagent.git --prefix ~/.config/opencode
 ```
 
-Then use the installed package path in `opencode.json`:
+Then use the installed path in **both** files:
 
 ```json
 {
   "plugin": ["~/.config/opencode/node_modules/superagent"]
 }
 ```
+
+```json
+{
+  "plugin": ["~/.config/opencode/node_modules/superagent"]
+}
+```
+
+The server (`opencode.json`) and the TUI (`tui.json`) must resolve the **same
+version** of the plugin. A mismatch is silent until a dispatch happens, and
+then shows as `server v… ≠ panel v…` in the Dispatches section.
+
+On Windows some OpenCode builds additionally fail to find `git.exe` for
+`git+https` specs; the npm-install path above works there too.
 
 ### Skills not found
 
