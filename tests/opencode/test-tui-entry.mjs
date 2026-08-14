@@ -95,6 +95,10 @@ test('readVersion reports this package version, and shrugs off a bad root', () =
   assert.equal(readVersion('/nonexistent'), null);
 });
 
+test('readVersion is re-exported from the shared bridge module', () => {
+  assert.match(readVersion(), /^\d+\.\d+\.\d+/);
+});
+
 // ----------------------------------------------------------------- roster
 
 test('the panel roster mirrors what the plugin would register', () => {

@@ -28,13 +28,14 @@
  */
 
 import fs from 'fs';
-import path from 'path';
-import { packageRoot, resolveConfigDir } from '../lib/paths.js';
+import { resolveConfigDir } from '../lib/paths.js';
 import { loadConfig } from '../lib/config-schema.js';
 import { ROSTER } from '../lib/roster.js';
 import { renderPanel } from '../lib/tui-panel.js';
 import { snapshotPath, readSnapshot, sessionRecords } from '../lib/tui-snapshot.js';
 import { debug, warn } from '../lib/log.js';
+
+export { readVersion } from '../lib/tui-snapshot.js';
 
 /** How often the board snapshot is re-checked. Slim uses the same cadence. */
 const POLL_MS = 1000;
@@ -76,16 +77,6 @@ export const loadElementFactory = async (specifiers = SOLID_SPECIFIERS) => {
     }
   }
   return null;
-};
-
-/** This package's own version, which is what the panel is reporting. */
-export const readVersion = (root = packageRoot) => {
-  try {
-    const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-    return typeof version === 'string' && version ? version : null;
-  } catch {
-    return null;
-  }
 };
 
 /**

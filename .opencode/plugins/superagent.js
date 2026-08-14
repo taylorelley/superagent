@@ -28,7 +28,7 @@ import {
   injectBoard,
   boardSnapshots,
 } from '../lib/board.js';
-import { snapshotPath, writeSnapshot } from '../lib/tui-snapshot.js';
+import { snapshotPath, writeSnapshot, readVersion } from '../lib/tui-snapshot.js';
 import { registerCouncillors } from '../lib/council.js';
 import { registerCommands, expandCommand } from '../lib/commands.js';
 import { guardHook, debug } from '../lib/log.js';
@@ -53,7 +53,7 @@ export const SuperagentPlugin = async ({ client, directory }) => {
 
   const publishBoard = () => {
     if (!snapshotFile) return;
-    writeSnapshot(snapshotFile, { directory, sessions: boardSnapshots() });
+    writeSnapshot(snapshotFile, { directory, pluginVersion: readVersion(), sessions: boardSnapshots() });
   };
 
   return {
