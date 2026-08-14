@@ -139,6 +139,12 @@ export const dispatchState = ({ hasFile, snapshot, panelVersion }) => {
   if (snapshot.pluginVersion && panelVersion && snapshot.pluginVersion !== panelVersion) {
     return 'version-mismatch';
   }
+  if (!snapshot.pluginVersion) {
+    // The server's own readVersion() failed (e.g. an unreadable package.json
+    // in a broken install), so a real skew here would go undetected. Not
+    // worth surfacing to the user over a working panel, but worth a trace.
+    debug('tui panel: snapshot has no pluginVersion; skipping the version-skew check');
+  }
   return 'ok';
 };
 

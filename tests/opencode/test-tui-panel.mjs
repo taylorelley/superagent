@@ -122,6 +122,21 @@ test('agents are collapsed by default: header count plus routed slots only', () 
   assert.ok(text.some((line) => line.includes('1 collapsed')), 'the hidden count is stated');
 });
 
+test('collapsed mode is capped too: routed slots past the budget count as hidden', () => {
+  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
+    name: `agent-${i}`,
+    model: 'anthropic/claude-opus-4-1',
+  }));
+  const text = lines(render({ agents }));
+
+  assert.equal(
+    text.filter((line) => line.includes('agent-')).length,
+    MAX_AGENT_ROWS,
+    'a fully-routed roster must not outgrow the sidebar just because it is collapsed'
+  );
+  assert.ok(text.some((line) => line.includes('3 collapsed')));
+});
+
 test('expanding via config shows the full roster, capped as before', () => {
   const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
     name: `agent-${i}`,
@@ -308,6 +323,12 @@ test('an unknown state still renders, in a neutral colour', () => {
   const tree = render({ records: [dispatch({ state: 'something-new' })] });
   assert.ok(lines(tree).includes('something-new'));
   assert.ok(colors(tree).every((color) => Object.values(THEME).includes(color)));
+});
+
+test('a record missing state renders "unknown", not the literal word undefined', () => {
+  const tree = render({ records: [dispatch({ state: undefined })] });
+  assert.ok(lines(tree).includes('unknown'));
+  assert.ok(!lines(tree).some((line) => line.includes('undefined')));
 });
 
 // --------------------------------------------------------------------- theme

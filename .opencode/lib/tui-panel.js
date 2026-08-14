@@ -111,6 +111,11 @@ export const renderPanel = (model, h) => {
       h.text({ fg: rightColor }, [right]),
     ]);
 
+  // Collapsed mode still owes the row budget: a preset routing more than
+  // MAX_AGENT_ROWS slots would otherwise render every one of them unbounded.
+  const collapsedAgents = agents.filter((agent) => agent.model).slice(0, MAX_AGENT_ROWS);
+  const collapsedHidden = agents.length - collapsedAgents.length;
+
   const children = [
     // Identity. The version answers "did my update land", the preset answers
     // "why is it behaving like that" — both otherwise cost a turn to ask.
@@ -139,12 +144,8 @@ export const renderPanel = (model, h) => {
               : []),
           ]
         : [
-            ...agents
-              .filter((agent) => agent.model)
-              .map((agent) => pair(agent.name, shortModel(agent.model))),
-            ...(agents.length - agents.filter((agent) => agent.model).length > 0
-              ? [muted(`+${agents.length - agents.filter((agent) => agent.model).length} collapsed`)]
-              : []),
+            ...collapsedAgents.map((agent) => pair(agent.name, shortModel(agent.model))),
+            ...(collapsedHidden > 0 ? [muted(`+${collapsedHidden} collapsed`)] : []),
           ]),
   ];
 
@@ -167,11 +168,12 @@ export const renderPanel = (model, h) => {
   } else {
     const ordered = orderRecords(records);
     for (const record of ordered.slice(0, MAX_DISPATCH_ROWS)) {
+      const state = record.state ?? 'unknown';
       children.push(
         pair(
-          `${STATE_GLYPH[record.state] ?? ''} ${record.agent ?? 'unknown'}`,
-          `${record.state}${record.background ? ' (bg)' : ''}`,
-          theme[STATE_COLOR[record.state] ?? 'textMuted'] ?? theme.textMuted
+          `${STATE_GLYPH[state] ?? ''} ${record.agent ?? 'unknown'}`,
+          `${state}${record.background ? ' (bg)' : ''}`,
+          theme[STATE_COLOR[state] ?? 'textMuted'] ?? theme.textMuted
         )
       );
       // Detail lines only for what is still running. A finished dispatch is
