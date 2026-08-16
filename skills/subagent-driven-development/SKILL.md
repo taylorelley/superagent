@@ -128,6 +128,11 @@ superagent:using-git-worktrees to create one or verify the existing one.
 Never start implementation on a main/master branch without your human
 partner's explicit consent.
 
+For a plan with dependent waves, that worktree may be a **stack layer**
+rather than a single feature-branch checkout — see using-git-worktrees'
+per-task parallel worktrees section and the Wave-to-wave stacking
+subsection below.
+
 Conversation memory does not survive compaction. In real sessions,
 controllers that lost their place have re-dispatched entire completed task
 sequences — the single most expensive failure observed. Track progress in
@@ -307,6 +312,21 @@ review) in wall-clock, instead of the sum of task times serially. The win is
 real when tasks are model-turn-bound; provider rate limits may throttle
 concurrency — that is an environment fact, not a reason to serialize the
 design.
+
+### Wave-to-wave stacking
+
+Within a wave, tasks are independent siblings — they fork from the current
+layer's HEAD and merge back locally, as described above. That doesn't
+change.
+
+Between waves, it does: when a next wave exists, a wave's merged result
+becomes a new stack layer via superagent:using-stacked-prs rather than
+continuing to accumulate on one shared feature branch. Wave 1 submits as
+the bottom layer, wave 2's worktree bases off wave 1's layer branch and
+submits as the next layer, and so on — so the plan finishes as a chain of
+small, independently-reviewable PRs instead of one PR covering every wave.
+A plan with a single wave (no dependencies at all) has nothing to stack
+against and finishes as one branch, same as today.
 
 ## The Task Loop
 
@@ -580,7 +600,9 @@ delete this plan's workspace (`rm -rf <workspace>`) — the git history is
 the record now. Sibling directories belong to other plans; leave them
 alone.
 
-Use superagent:finishing-a-development-branch.
+Use superagent:finishing-a-development-branch. When the plan's waves were
+stacked (§Wave-to-wave stacking), it surfaces the whole chain of layer
+PRs, not a single PR.
 
 ## Common Rationalizations
 

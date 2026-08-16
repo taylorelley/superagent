@@ -16,7 +16,7 @@ Load plan, review critically, execute all tasks, report when complete.
 ## The Process
 
 ### Step 1: Load and Review Plan
-1. Ensure an isolated workspace: use superagent:using-git-worktrees to create one or verify the existing one
+1. Ensure an isolated workspace: use superagent:using-git-worktrees to create one or verify the existing one. Sequential dependent tasks default to a stacked PR per layer at finish time (superagent:using-stacked-prs), not one PR for the whole plan.
 2. Read plan file
 3. Review critically - identify any questions or concerns about the plan
 4. If concerns: Raise them with your human partner before starting

@@ -43,6 +43,13 @@ This determines which menu to show and how cleanup works:
 | `GIT_DIR != GIT_COMMON`, named branch | Standard 3 options | Provenance-based (see Step 6) |
 | `GIT_DIR != GIT_COMMON`, detached HEAD | Reduced 2 options (no merge) | Externally managed — leave in place |
 
+**Stack membership:** if this branch is plausibly part of a sequential
+chain (created by subagent-driven-development's wave-to-wave stacking, or
+your human partner asked for a stack), run superagent:using-stacked-prs'
+Step 0 capability probe now. It reports tooled mode, manual mode, or "not a
+stack" — carry that result into Steps 4 and 5. Skip the probe entirely for
+a plain, non-decomposable branch; not every finish is a stack.
+
 ## Step 3: Determine Base Branch
 
 The base branch is whatever this work forked from — usually named in the
@@ -52,7 +59,11 @@ Confirm before merging: merging into the wrong base is expensive to undo.
 
 ## Step 4: Present Options
 
-**Normal repo and named-branch worktree — present exactly these 3 options:**
+**Normal repo and named-branch worktree — present exactly these 3 options.**
+Option 2's wording depends on the stack-membership check from Step 2: when
+using-stacked-prs reported this branch is part of a stack, option 2 reads
+"Push and submit this layer (part of a stack)" instead of "Push and create
+a Pull Request" — same option number, same menu shape:
 
 ```
 Implementation complete. What would you like to do?
@@ -111,6 +122,15 @@ git branch -d <feature-branch>
 ```
 
 ### Option 2: Push and Create PR
+
+**Stack membership from Step 2 said this branch is part of a stack:**
+delegate to superagent:using-stacked-prs' submit (or sync, if lower layers
+changed since the last submit) verb — tooled mode's `gh stack submit --auto`
+or manual mode's push + forge-CLI PR creation with the Stack Overview body
+template. Report the full PR chain to your human partner, not just one URL.
+
+**Not part of a stack** (plain branch, or your human partner declined
+stacking):
 
 ```bash
 git push -u origin <feature-branch>
@@ -206,6 +226,7 @@ place. If your platform provides a workspace-exit tool, use it.
 |--------|-------|------|---------------|----------------|
 | 1. Merge locally | yes | - | - | yes |
 | 2. Create PR | - | yes | yes | - |
+| 2. Push and submit (stack layer) | - | yes, via using-stacked-prs | yes | - |
 | 3. Keep as-is | - | - | yes | - |
 | Discard (explicit request only) | - | - | - | yes (force) |
 
@@ -222,4 +243,5 @@ place. If your platform provides a workspace-exit tool, use it.
 | "Removal refused — `--force` is just finishing the cleanup" | The refusal means files exist only in that worktree. `--force` destroys them permanently. Show your human partner and ask. |
 | "The merged-result failure is probably flaky" | A failing merged result stops everything. Branch and worktree stay put while you investigate. |
 | "The base branch is obviously main" | Confirm the fork point or ask. Merging into the wrong base is expensive to undo. |
+| "This branch is part of something bigger — I'll just make one PR" | Check stack membership in Step 2. Sequential dependent work defaults to a chain of small PRs via using-stacked-prs, not one large one. |
 | "The push was rejected — force-push will fix it" | A rejected push means the remote moved. Investigate; force-push only on your human partner's explicit request. |

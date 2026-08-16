@@ -166,6 +166,16 @@ implementer works only in that worktree; the controller merges the branch back
 after the task's review passes, then removes the worktree and deletes the
 branch.
 
+**Within a wave** (tasks independent of each other) this is the whole
+story: fork from the current layer's HEAD, merge back locally after review.
+
+**Between waves** (the next wave depends on this one), the merged result
+doesn't keep accumulating on one ever-growing feature branch. Once a wave's
+tasks are merged into its layer's branch, the next wave's worktree bases off
+that layer's branch tip and becomes a **new stack layer** — see
+superagent:using-stacked-prs for how layers become their own reviewable PRs
+instead of one PR at the end.
+
 ## Common Rationalizations
 
 | Excuse | Reality |
