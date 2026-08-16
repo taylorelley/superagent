@@ -70,7 +70,7 @@ Superagent is a plugin for [OpenCode](https://opencode.ai).
 
 6. **requesting-code-review** - Activates between tasks. Reviews against plan, reports issues by severity. Critical issues block progress.
 
-7. **finishing-a-development-branch** - Activates when tasks complete. Verifies tests, presents options (merge/PR/keep/discard), cleans up worktree.
+7. **finishing-a-development-branch** - Activates when tasks complete. Verifies tests, presents options (merge/PR/keep/discard), cleans up worktree. For sequential dependent work, "push and create a PR" defaults to submitting a **stack of small PRs** (one per layer) via **using-stacked-prs**, not one PR for everything — using GitHub's native Stacked PRs (`gh-stack`) when available, or plain git + your forge's CLI otherwise.
 
 **The agent checks for relevant skills before any task.** Mandatory workflows, not suggestions.
 
@@ -166,6 +166,7 @@ schema, model-routing examples, troubleshooting — lives in
 - **requesting-code-review** - Pre-review checklist
 - **receiving-code-review** - Responding to feedback
 - **using-git-worktrees** - Parallel development branches
+- **using-stacked-prs** - Chain of small, reviewable PRs for sequential dependent work
 - **finishing-a-development-branch** - Merge/PR decision workflow
 - **subagent-driven-development** - Fast iteration with two-stage review (spec compliance, then code quality)
 

@@ -278,6 +278,35 @@ serially as before.
 If worktree creation fails (sandbox/permission), SDD falls back to serial
 execution in place, with a ledger note.
 
+Merging back into one shared feature branch happens *within* a wave, across
+its independent tasks. *Between* waves that depend on each other, the
+merged result becomes a new stack layer instead — see Stacked PRs below.
+
+## Stacked PRs
+
+`skills/using-stacked-prs` extends the worktree-by-default workflow: for
+sequential/dependent work (dependent plan waves, or a single branch your
+human partner asks to split), the default at finish time is a chain of
+small PRs — one per layer, each based on the one below — instead of one
+large PR.
+
+Two mechanisms, selected automatically, never a reason to skip stacking:
+
+- **Tooled mode** — GitHub's native Stacked PRs feature via the `gh-stack`
+  CLI extension (`gh stack init/add/submit/sync/rebase/merge`), used when a
+  GitHub remote, `gh`, `gh-stack`, and the feature itself are all present.
+- **Manual mode** — the same layering with plain git and the forge's own
+  CLI: sequential branch naming, PRs based on the layer below, a "Stack
+  Overview" section in each PR body linking its siblings, cascading
+  `git rebase` + `git push --force-with-lease` when a lower layer changes,
+  and sequential merge-and-retarget when landing. This is the true default
+  and needs no third-party tool — `gh-stack` is only an opportunistic
+  accelerator, never a hard dependency.
+
+`finishing-a-development-branch`'s "push and create a PR" option delegates
+to this skill whenever the branch is part of a stack; a plain,
+non-decomposable branch still gets one PR as before.
+
 ## The council
 
 `/council <question>` asks several models the same question in parallel and

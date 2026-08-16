@@ -13,7 +13,7 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
 
-**Context:** If working in an isolated worktree, it should have been created via the `superagent:using-git-worktrees` skill at execution time.
+**Context:** If working in an isolated worktree, it should have been created via the `superagent:using-git-worktrees` skill at execution time. A plan whose Task Order & Dependencies table has sequential waves defaults to a stacked PR per layer at finish time (`superagent:using-stacked-prs`), not one PR for the whole plan.
 
 **Save plans to:** `docs/superagent/plans/YYYY-MM-DD-<feature-name>.md`
 - (User preferences for plan location override this default)

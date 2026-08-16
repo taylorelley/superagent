@@ -49,6 +49,16 @@ Superpowers on a different agent, use upstream `obra/superpowers`.
 
 PRs that add optional or required dependencies on third-party projects will not be accepted. Superagent is a zero-dependency plugin by design. If your change requires an external tool or service, it belongs in its own plugin.
 
+The one narrow exception is a skill that *shells out* to a tool the user's
+environment may already have (a forge CLI, `git` itself) and degrades
+gracefully to plain git/CLI commands when that tool is absent — the same
+category `finishing-a-development-branch` already relies on for PR
+creation. `using-stacked-prs`'s optional use of the `gh-stack` extension
+follows this pattern: detected at runtime, never required, with a
+fully-functional plain-git fallback as the true default. This is not a
+loophole for adding real dependencies — the bar is that the skill must work
+completely without the tool.
+
 ### "Compliance" changes to skills
 
 Our internal skill philosophy differs from Anthropic's published guidance on writing skills. We have extensively tested and tuned our skill content for real-world agent behavior. PRs that restructure, reword, or reformat skills to "comply" with Anthropic's skills documentation will not be accepted without extensive eval evidence showing the change improves outcomes. The bar for modifying behavior-shaping content is very high.
