@@ -307,6 +307,16 @@ Two mechanisms, selected automatically, never a reason to skip stacking:
 to this skill whenever the branch is part of a stack; a plain,
 non-decomposable branch still gets one PR as before.
 
+**Eval evidence outstanding.** `using-git-worktrees` and
+`finishing-a-development-branch` are tuned skills — per `AGENTS.md`, changes
+to them need before/after `quorum` results, not just a code diff. As of this
+change, static scenario validation (`bun run quorum check` in `evals/`)
+passes for every existing worktree/finish-branch scenario, but no live
+`quorum` run has been done (needs a trusted environment with
+`ANTHROPIC_API_KEY`, the `opencode` CLI, and the `gauntlet` CLI on `PATH`),
+and no scenario exists yet for `using-stacked-prs` itself. Both are needed
+before this meets the repo's own bar for tuned-skill changes.
+
 ## The council
 
 `/council <question>` asks several models the same question in parallel and
