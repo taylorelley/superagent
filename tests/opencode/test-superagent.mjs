@@ -467,6 +467,7 @@ import {
   councilInstruction,
 } from '../../.opencode/lib/council.js';
 import { registerCommands, expandCommand, COMMANDS } from '../../.opencode/lib/commands.js';
+import { cachePath, writeCache } from '../../.opencode/lib/update-check.js';
 
 const councilSettings = (members, enabled = true) => {
   const s = loadConfig({ env: {} });
@@ -566,7 +567,7 @@ test('commands register without clobbering existing ones', () => {
   assert.equal(config.command.preset.template, 'MINE', "the user's command was replaced");
   // /board is on by default; /council is not, so it is gated out here.
   assert.ok(config.command.board, 'other enabled commands should still register');
-  assert.equal(Object.keys(COMMANDS).length, 3);
+  assert.equal(Object.keys(COMMANDS).length, 4);
 });
 
 test('a command collision is reported through the conflicts collector', () => {
@@ -616,6 +617,33 @@ test('/preset --persist writes the choice to the state file', () => {
 test('/board reports an empty board rather than nothing', () => {
   const text = expandCommand('board', '', { settings: loadConfig({ env: {} }), sessionID: 'nope' });
   assert.match(text, /job board is empty/);
+});
+
+// `/update install` is deliberately not exercised through expandCommand here:
+// it shells out for real via `packageRoot` (this checkout's own `.git`), and
+// that logic is already fully covered against an injected exec in
+// test-update-install.mjs. Only the read-only "check" branch is tested here.
+
+test('/update reports no check yet before one has run', () => {
+  withTempDir((dir) => {
+    const text = expandCommand('update', '', { settings: loadConfig({ env: {} }), configDir: dir });
+    assert.match(text, /No update check has completed yet/);
+  });
+});
+
+test('/update reports the cached check result', () => {
+  withTempDir((dir) => {
+    writeCache(cachePath(dir), {
+      checkedAt: Date.now(),
+      currentVersion: '0.1.0',
+      latestVersion: '0.2.0',
+      updateAvailable: true,
+    });
+    const text = expandCommand('update', '', { settings: loadConfig({ env: {} }), configDir: dir });
+    assert.match(text, /Installed version: 0\.1\.0/);
+    assert.match(text, /Latest known version: 0\.2\.0/);
+    assert.match(text, /update is available/);
+  });
 });
 
 test('an unknown command is left alone', () => {

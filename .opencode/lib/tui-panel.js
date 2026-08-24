@@ -105,6 +105,8 @@ export const renderPanel = (model, h) => {
     theme = {},
     snapshotState = 'ok',
     pluginVersion = null,
+    updateAvailable = false,
+    latestVersion = null,
     agentRowLimit = MAX_AGENT_ROWS,
     dispatchRowLimit = MAX_DISPATCH_ROWS,
     onToggleAgents,
@@ -137,6 +139,17 @@ export const renderPanel = (model, h) => {
       h.text({ fg: theme.accent }, ['Superagent']),
       h.text({ fg: theme.textMuted }, [`v${version}`]),
     ]),
+    // A persistent, always-checked surface for "an update exists" — the toast
+    // the server plugin also fires on detection is best-effort and not yet
+    // confirmed against a live host, so this line is the one guaranteed way
+    // the notice reaches the user. See docs/superagent.md.
+    ...(updateAvailable
+      ? [
+          h.text({ fg: theme.accent }, [
+            `⬆ v${latestVersion ?? '?'} available — run /update install`,
+          ]),
+        ]
+      : []),
     muted(
       `${preset} · agents ${onOff(subsystems.agents)} · board ${onOff(subsystems.board)}` +
         (subsystems.council ? ' · council on' : ''),

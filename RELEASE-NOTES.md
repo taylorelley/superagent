@@ -1,5 +1,18 @@
 # Superpowers Release Notes
 
+## Unreleased
+
+### Update checker
+
+- Superagent now checks GitHub once per session for a newer release and notes
+  it in the TUI sidebar panel (and, best-effort, a popup) when one exists.
+  `/update` reports the current and latest known versions; `/update install`
+  installs the update in place (`git pull` or the documented `npm install`
+  fallback), same as the manual steps in `.opencode/INSTALL.md`, and says
+  plainly that a restart is still required. Off by config
+  (`{"updateCheck": {"enabled": false}}`) or `SUPERAGENT_DISABLE=1`. See
+  `docs/superagent.md#updates`.
+
 ## v0.1.0 (2026-08-14)
 
 First versioned release of the OpenCode-only fork. Version numbering restarts

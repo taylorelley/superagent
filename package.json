@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "Superagent skills and runtime bootstrap for OpenCode",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taylorelley/superagent.git"
+  },
   "main": ".opencode/plugins/superagent.js",
   "scripts": {
     "lint": "eslint .",

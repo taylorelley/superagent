@@ -105,6 +105,17 @@ and Bun versions pin that resolved git dependency in a lockfile or cache, so a
 restart may not pick up the newest Superagent commit. If updates do not appear,
 clear OpenCode's package cache or reinstall the plugin.
 
+Superagent checks GitHub for a newer version once per session and notes it in
+the sidebar panel (and, best-effort, a TUI popup) when one exists. `/update`
+reports the current and latest known versions; `/update install` runs the
+update in place — `git pull --ff-only` for a git-checkout install, or the same
+`npm install ... --prefix` fallback documented below otherwise — so this
+section's manual steps are only needed if that fails, or before a restart if
+`git`/`npm` are unavailable in that environment. Either way, **a restart is
+still required**: plugin code is resolved once at OpenCode startup. See
+[docs/superagent.md#updates](../docs/superagent.md#updates). Turn the check
+off with `{"updateCheck": {"enabled": false}}` in `superagent.json`.
+
 To follow a branch or tag, append it:
 
 ```json

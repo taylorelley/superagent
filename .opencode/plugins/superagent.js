@@ -29,11 +29,11 @@ import {
   boardSnapshots,
 } from '../lib/board.js';
 import { snapshotPath, writeSnapshot, readVersion } from '../lib/tui-snapshot.js';
+import { checkForUpdate, cachePath, readCache } from '../lib/update-check.js';
 import { registerCouncillors } from '../lib/council.js';
 import { registerCommands, expandCommand } from '../lib/commands.js';
 import { guardHook, debug } from '../lib/log.js';
 
-// eslint-disable-next-line no-unused-vars -- part of OpenCode's plugin factory signature
 export const SuperagentPlugin = async ({ client, directory }) => {
   const configDir = resolveConfigDir();
   const settings = loadConfig({ configDir, projectDir: directory });
@@ -54,12 +54,20 @@ export const SuperagentPlugin = async ({ client, directory }) => {
 
   const publishBoard = () => {
     if (!snapshotFile) return;
+    const updateCache = readCache(cachePath(configDir));
     writeSnapshot(snapshotFile, {
       directory,
       pluginVersion: readVersion(),
+      updateAvailable: updateCache?.updateAvailable ?? false,
+      latestVersion: updateCache?.latestVersion ?? null,
       sessions: boardSnapshots(),
     });
   };
+
+  // Guards the update check to at most once per OpenCode process, not once
+  // per session — `session.created` fires for every child session a dispatch
+  // opens too.
+  let updateChecked = false;
 
   return {
     config: guardHook('config hook', async (config) => {
@@ -128,6 +136,37 @@ export const SuperagentPlugin = async ({ client, directory }) => {
         event.properties?.sessionID ?? event.properties?.info?.id,
       );
       if (changed) publishBoard();
+
+      if (
+        event.type === 'session.created' &&
+        !updateChecked &&
+        settings.updateCheck?.enabled !== false
+      ) {
+        updateChecked = true;
+        const result = await checkForUpdate({
+          currentVersion: readVersion(),
+          cacheFile: cachePath(configDir),
+          intervalHours: settings.updateCheck?.intervalHours,
+        });
+        if (result?.updateAvailable) {
+          publishBoard();
+          // Best-effort: `client.tui.showToast` is not yet independently
+          // verified against this project's pinned OpenCode source (see
+          // docs/superagent.md, "Still unverified"). The sidebar panel line
+          // `publishBoard()` just wrote is the confirmed-working fallback, so
+          // a missing or throwing toast API must not be treated as an error.
+          try {
+            await client?.tui?.showToast?.({
+              body: {
+                message: `Superagent update available: v${result.latestVersion} (run /update install)`,
+                variant: 'info',
+              },
+            });
+          } catch (err) {
+            debug(`update toast failed: ${err.message}`);
+          }
+        }
+      }
     }),
 
     'experimental.chat.messages.transform': guardHook(

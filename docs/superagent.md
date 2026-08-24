@@ -116,7 +116,8 @@ warning rather than taking the layer down.
     "enforceOwnership": "warn" // or "off"
   },
   "bootstrap": { "enabled": true },
-  "tui": { "enabled": true }     // the sidebar panel
+  "tui": { "enabled": true },    // the sidebar panel
+  "updateCheck": { "enabled": true, "intervalHours": 24 }
 }
 ```
 
@@ -369,6 +370,42 @@ model produce agreement by construction, which is worse than not asking:
 
 Councillors are sealed: they read and reason, but cannot edit, dispatch, or run
 commands.
+
+## Updates
+
+Once per OpenCode process — not once per session, so a dispatch's child
+sessions don't repeat it — the plugin asks GitHub whether a newer Superagent
+exists: a release first (`GET /repos/taylorelley/superagent/releases/latest`),
+falling back to `package.json` on the default branch if this repo has not cut
+one yet. The result is cached to
+`<configDir>/superagent/update-check.json` and reused for `updateCheck.intervalHours`
+(default 24) before asking again, so a normal day of restarts costs at most
+one request. Nothing about the user or the project is sent — the request asks
+"what's the latest version," full stop.
+
+When a newer version is found:
+
+- The sidebar panel (`## The sidebar panel` above) gains a line —
+  `⬆ vX.Y.Z available — run /update install` — directly under the version
+  header. This is the one channel independently confirmed working in this
+  codebase.
+- The plugin also makes a best-effort `client.tui.showToast(...)` call. This
+  API is not yet confirmed against this project's own pinned OpenCode source
+  (see "Still unverified" below) — treat the panel line as the reliable
+  notice and the toast as a bonus that may or may not appear.
+
+`/update` reports the installed version, the latest known version, and when it
+was last checked, reading only the cache — it never blocks on a fetch of its
+own. `/update install` shells out to `git pull --ff-only` (when the install is
+a git checkout) or `npm install superagent@git+https://github.com/taylorelley/superagent.git --prefix <configDir>`
+(OpenCode's own git-spec install path, see `.opencode/INSTALL.md`) — the same
+two paths documented there, so a missing `git`/`npm` degrades to reporting the
+exact manual command rather than failing silently. Like `/preset`, it says
+plainly that **the update does not take effect until OpenCode restarts** —
+plugin code is resolved once at startup.
+
+Turn the check off with `{"updateCheck": {"enabled": false}}`, or with
+`SUPERAGENT_DISABLE=1`, which turns off everything.
 
 ## What degrades, and how
 
@@ -671,3 +708,15 @@ against a live model.
   is actually delivered to a plugin-contributed `sidebar_content` slot by a
   live OpenCode TUI host — the Agents header and the `+N more` lines carry the
   prop, but no click has been confirmed to reach it outside a terminal.
+- Whether `client.tui.showToast({ body: { message, variant } })` exists and
+  works as documented on opencode.ai, called from the `client` the plugin
+  factory receives. Used, best-effort, for the update-available popup ("##
+  Updates" above) — wrapped so a missing or throwing implementation degrades
+  silently to the sidebar panel's own notice rather than breaking the `event`
+  hook. Not yet read out of `sst/opencode`/`anomalyco/opencode` source the way
+  the rest of this section was.
+- Whether `event.type === 'session.created'` fires exactly once per OpenCode
+  process rather than once per session (including a dispatch's child
+  sessions). The update check guards against the latter with its own
+  in-process flag, so a wrong assumption here costs at most a redundant guard,
+  not a repeated check.

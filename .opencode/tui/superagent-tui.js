@@ -349,6 +349,8 @@ export default {
           records,
           snapshotState: state,
           pluginVersion: snapshot?.pluginVersion ?? null,
+          updateAvailable: snapshot?.updateAvailable ?? false,
+          latestVersion: snapshot?.latestVersion ?? null,
           theme,
           ...interactions.state,
           onToggleAgents: interactions.toggleAgents,

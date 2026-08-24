@@ -139,7 +139,13 @@ additions layered on top, not a replacement you're forced into.
 project throughout — package name, plugin entry point, env vars, skill
 paths — and, while doing so, removed the brainstorming skill's telemetry
 beacon that used to fetch a version-tagged image from `primeradiant.com` on
-every session. The fork no longer phones home by default.
+every session. The fork no longer phones home by default. The one outbound
+request that remains is an update check: once per session, Superagent asks
+GitHub "is there a newer Superagent" — nothing about the user or the project
+is sent — and shows a note in the OpenCode sidebar (and, best-effort, a TUI
+popup) when one exists. `/update install` installs it from inside OpenCode.
+Turn it off with `{"updateCheck": {"enabled": false}}`; see
+[docs/superagent.md](docs/superagent.md#updates).
 
 Together, these changes trade breadth (many harnesses, shallow support) for
 depth (one harness, verified behavior, and a coordination layer that makes

@@ -12,6 +12,8 @@ import { councilInstruction } from './council.js';
 import { stateFilePath } from './config-schema.js';
 import { SHIPPED_PRESETS } from './presets.js';
 import { renderBoard } from './board.js';
+import { readCache, cachePath } from './update-check.js';
+import { performUpdate } from './update-install.js';
 import { warn } from './log.js';
 
 export const COMMANDS = {
@@ -27,6 +29,10 @@ export const COMMANDS = {
     description: 'Show the Superagent job board for this session',
     template: 'Show the job board.',
   },
+  update: {
+    description: 'Check for, or install, a Superagent update',
+    template: 'Show the Superagent update status.',
+  },
 };
 
 /**
@@ -41,6 +47,7 @@ const COMMAND_ENABLED = {
   council: (settings) => settings?.council?.enabled !== false,
   board: (settings) => settings?.board?.enabled !== false,
   preset: () => true,
+  update: () => true,
 };
 
 export const registerCommands = (config, settings, { conflicts } = {}) => {
@@ -124,6 +131,53 @@ const presetReport = (settings, args, configDir) => {
 };
 
 /**
+ * Report or act on the update check's cached result.
+ *
+ * `/update` reads what the last background check found — it never triggers a
+ * fetch of its own, so the command is instant. `/update install` shells out
+ * (`update-install.js`) and is honest, like `/preset --persist`, that the
+ * change is not live until OpenCode restarts: plugin code is resolved once at
+ * startup, the same as agents and presets.
+ */
+const updateReport = (args, configDir) => {
+  const [action] = args.trim().split(/\s+/).filter(Boolean);
+
+  if (action === 'install') {
+    const result = performUpdate({ configDir });
+    return [
+      result.ok
+        ? `Update installed (${result.method}).`
+        : `Update failed (${result.method}): ${result.error}`,
+      '',
+      '**This does not take effect until OpenCode restarts.** Plugin code is resolved once',
+      'at startup and cached, the same as agent definitions and presets.',
+      '',
+      'Tell your human partner exactly this and stop. Do not take any other action.',
+    ].join('\n');
+  }
+
+  const cache = readCache(cachePath(configDir));
+  if (!cache) {
+    return [
+      'No update check has completed yet this session.',
+      '',
+      'Tell your human partner this and stop. Do not take any other action.',
+    ].join('\n');
+  }
+
+  return [
+    `Installed version: ${cache.currentVersion ?? 'unknown'}`,
+    `Latest known version: ${cache.latestVersion ?? 'unknown'}`,
+    `Last checked: ${cache.checkedAt ? new Date(cache.checkedAt).toISOString() : 'never'}`,
+    cache.updateAvailable
+      ? 'An update is available. Run `/update install` to install it.'
+      : 'You are on the latest known version.',
+    '',
+    'Tell your human partner this and stop. Do not take any other action.',
+  ].join('\n');
+};
+
+/**
  * Rewrite a command into its real instruction.
  *
  * Returns the replacement text, or null to leave the command alone.
@@ -144,6 +198,10 @@ export const expandCommand = (command, args, { settings, councillors, configDir,
       '',
       'Report this to your human partner and stop. Do not take any other action.',
     ].join('\n');
+  }
+
+  if (command === 'update') {
+    return updateReport(args ?? '', configDir);
   }
 
   return null;
