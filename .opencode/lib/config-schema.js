@@ -113,6 +113,17 @@ export const DEFAULTS = {
     /** Render the full roster instead of the collapsed summary. */
     agents: { expanded: false },
   },
+
+  updateCheck: {
+    /**
+     * Ask GitHub once per session start whether a newer Superagent exists.
+     * Only ever asks "is there a newer version" — nothing about the user or
+     * their project is sent. See docs/superagent.md.
+     */
+    enabled: true,
+    /** Hours between checks; a cached result inside this window is reused. */
+    intervalHours: 24,
+  },
 };
 
 const VALID = {
@@ -153,6 +164,7 @@ export const envOverrides = (env = process.env) => {
     out.agents = { enabled: false };
     out.board = { enabled: false };
     out.tui = { enabled: false };
+    out.updateCheck = { enabled: false };
   }
   return out;
 };
@@ -170,7 +182,7 @@ const isObject = (value) => value !== null && typeof value === 'object' && !Arra
  * that is valid JSON must never be able to do that.
  */
 const validate = (config) => {
-  for (const section of ['agents', 'council', 'board', 'bootstrap', 'tui']) {
+  for (const section of ['agents', 'council', 'board', 'bootstrap', 'tui', 'updateCheck']) {
     if (!isObject(config[section])) {
       if (config[section] !== undefined) {
         warn(`${section}: expected an object, ignoring and using defaults`);
@@ -194,6 +206,12 @@ const validate = (config) => {
   if (!isObject(config.agents.temperature))
     config.agents.temperature = { ...DEFAULTS.agents.temperature };
   if (!isObject(config.tui.agents)) config.tui.agents = { ...DEFAULTS.tui.agents };
+  if (
+    typeof config.updateCheck.intervalHours !== 'number' ||
+    !(config.updateCheck.intervalHours >= 0)
+  ) {
+    config.updateCheck.intervalHours = DEFAULTS.updateCheck.intervalHours;
+  }
   return config;
 };
 
