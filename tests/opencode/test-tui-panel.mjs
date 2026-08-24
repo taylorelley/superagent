@@ -60,6 +60,29 @@ const colors = (node) => {
   return [...out];
 };
 
+/** The first box whose direct text children include the exact label `needle`. */
+const boxWithLabel = (node, needle) => {
+  let found = null;
+  walk(node, (n) => {
+    if (found || n.tag !== 'box') return;
+    const hasLabel = (n.children ?? []).some(
+      (c) => c?.tag === 'text' && (c.children ?? []).includes(needle),
+    );
+    if (hasLabel) found = n;
+  });
+  return found;
+};
+
+/** The first text node whose string child contains `needle`. */
+const textContaining = (node, needle) => {
+  let found = null;
+  walk(node, (n) => {
+    if (found || n.tag !== 'text') return;
+    if ((n.children ?? []).some((c) => typeof c === 'string' && c.includes(needle))) found = n;
+  });
+  return found;
+};
+
 const render = (model) => renderPanel({ theme: THEME, ...model }, factory());
 
 const dispatch = (over = {}) => ({
@@ -198,6 +221,65 @@ test('agents off means no roster, not an empty one', () => {
   assert.ok(text.some((line) => line.includes('agents off')));
 });
 
+// ------------------------------------------------------- agents interaction
+
+test('the Agents header carries the toggle handler as onMouseDown', () => {
+  const onToggleAgents = () => {};
+  const tree = render({
+    agents: [{ name: 'oracle', model: 'anthropic/claude-opus-4-1' }],
+    onToggleAgents,
+  });
+  const header = boxWithLabel(tree, 'Agents');
+  assert.equal(header?.props?.onMouseDown, onToggleAgents);
+});
+
+test('the "+N collapsed" line carries the same toggle handler as the header', () => {
+  const onToggleAgents = () => {};
+  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
+    name: `agent-${i}`,
+    model: 'anthropic/claude-opus-4-1',
+  }));
+  const overflow = textContaining(render({ agents, onToggleAgents }), 'collapsed');
+  assert.equal(overflow?.props?.onMouseDown, onToggleAgents);
+});
+
+test('the expanded "+N more" line carries the reveal-more-agents handler', () => {
+  const onRevealMoreAgents = () => {};
+  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
+    name: `agent-${i}`,
+    model: null,
+  }));
+  const overflow = textContaining(
+    render({ agents, agentsExpanded: true, onRevealMoreAgents }),
+    'more',
+  );
+  assert.equal(overflow?.props?.onMouseDown, onRevealMoreAgents);
+});
+
+test('a larger agentRowLimit reveals more of the expanded roster', () => {
+  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
+    name: `agent-${i}`,
+    model: null,
+  }));
+  const text = lines(render({ agents, agentsExpanded: true, agentRowLimit: MAX_AGENT_ROWS + 3 }));
+  assert.equal(
+    text.filter((line) => line.includes('agent-')).length,
+    MAX_AGENT_ROWS + 3,
+    'the whole (padded) roster fits under the raised limit',
+  );
+  assert.ok(!text.some((line) => line.includes('more')), 'nothing left to reveal');
+});
+
+test('omitting agentRowLimit renders exactly as the default cap', () => {
+  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
+    name: `agent-${i}`,
+    model: null,
+  }));
+  const text = lines(render({ agents, agentsExpanded: true }));
+  assert.equal(text.filter((line) => line.includes('agent-')).length, MAX_AGENT_ROWS);
+  assert.ok(text.includes('+3 more'));
+});
+
 // ---------------------------------------------------------------- dispatches
 
 test('a missing snapshot says so instead of pretending there were no dispatches', () => {
@@ -314,6 +396,24 @@ test('a busy session is capped and says how much it is hiding', () => {
 
   assert.equal(text.filter((line) => line.includes('agent-')).length, MAX_DISPATCH_ROWS);
   assert.ok(text.includes('+4 more'));
+});
+
+test('the Dispatches "+N more" line carries the reveal-more-dispatches handler', () => {
+  const onRevealMoreDispatches = () => {};
+  const records = Array.from({ length: MAX_DISPATCH_ROWS + 4 }, (_, i) =>
+    dispatch({ agent: `agent-${i}`, endedAt: i }),
+  );
+  const overflow = textContaining(render({ records, onRevealMoreDispatches }), 'more');
+  assert.equal(overflow?.props?.onMouseDown, onRevealMoreDispatches);
+});
+
+test('a larger dispatchRowLimit reveals more of a busy session', () => {
+  const records = Array.from({ length: MAX_DISPATCH_ROWS + 4 }, (_, i) =>
+    dispatch({ agent: `agent-${i}`, endedAt: i }),
+  );
+  const text = lines(render({ records, dispatchRowLimit: MAX_DISPATCH_ROWS + 4 }));
+  assert.equal(text.filter((line) => line.includes('agent-')).length, MAX_DISPATCH_ROWS + 4);
+  assert.ok(!text.some((line) => line.includes('more')), 'nothing left to reveal');
 });
 
 test('dispatch state is coloured by outcome, so a failure is not just more text', () => {

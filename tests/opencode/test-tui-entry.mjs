@@ -14,6 +14,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import entry, {
+  createPanelInteractions,
+  createRootRepainter,
   currentSessionID,
   dispatchState,
   elementFactory,
@@ -24,6 +26,7 @@ import entry, {
 } from '../../.opencode/tui/superagent-tui.js';
 import { loadConfig } from '../../.opencode/lib/config-schema.js';
 import { ROSTER } from '../../.opencode/lib/roster.js';
+import { MAX_AGENT_ROWS, MAX_DISPATCH_ROWS } from '../../.opencode/lib/tui-panel.js';
 
 const settings = (over = {}) => {
   const base = loadConfig({ env: {} });
@@ -91,6 +94,47 @@ test('the element factory degrades to nothing when OpenTUI cannot be reached', a
     null,
     'a module without createElement is not one',
   );
+});
+
+/** A recording OpenTUI-shaped module, for elementFactory/createRootRepainter tests. */
+const recordingModule = (removalName = 'removeChild') => {
+  const mod = {
+    createElement: (tag) => ({ tag, props: {}, children: [] }),
+    setProp: (node, key, value) => {
+      node.props[key] = value;
+    },
+    insert: (node, child) => node.children.push(child),
+  };
+  const removed = [];
+  if (removalName) {
+    mod[removalName] = (parent, child) => {
+      parent.children = parent.children.filter((c) => c !== child);
+      removed.push(child);
+    };
+  }
+  return { mod, removed };
+};
+
+test('elementFactory exposes mount always, and unmount only when a removal export is found', () => {
+  const { mod: withoutRemoval } = recordingModule(null);
+  const h1 = elementFactory(withoutRemoval);
+  assert.equal(typeof h1.mount, 'function');
+  assert.equal(h1.unmount, null, 'no removal export means no unmount capability');
+
+  const { mod: withRemoval, removed } = recordingModule('removeNode');
+  const h2 = elementFactory(withRemoval);
+  const parent = { tag: 'box', props: {}, children: [h2.text({}, ['x'])] };
+  h2.unmount(parent, parent.children[0]);
+  assert.equal(removed.length, 1, 'the discovered removal export was actually called');
+});
+
+test('elementFactory.mount inserts into an existing parent, not just at creation', () => {
+  const { mod } = recordingModule();
+  const h = elementFactory(mod);
+  const parent = h.box({}, []);
+  const child = h.text({}, ['late']);
+  h.mount(parent, child);
+  assert.deepEqual(parent.children, [child]);
 });
 
 // ---------------------------------------------------------------- version
@@ -187,6 +231,96 @@ test('dispatchState distinguishes no file, incompatible, mismatch, and ok', () =
     dispatchState({ hasFile: true, snapshot: {}, panelVersion: '0.1.0' }),
     'ok',
     'no server version means no comparison',
+  );
+});
+
+// ------------------------------------------------------- panel interactions
+
+test('createPanelInteractions seeds agentsExpanded from the default, coerced to boolean', () => {
+  assert.equal(createPanelInteractions(true, () => {}).state.agentsExpanded, true);
+  assert.equal(createPanelInteractions(false, () => {}).state.agentsExpanded, false);
+  assert.equal(createPanelInteractions(undefined, () => {}).state.agentsExpanded, false);
+  assert.equal(
+    createPanelInteractions('yes', () => {}).state.agentsExpanded,
+    false,
+    'only === true seeds expanded, matching how settings.tui.agents.expanded is read elsewhere',
+  );
+});
+
+test('toggleAgents flips the flag, resets the row limit, and calls onChange', () => {
+  let calls = 0;
+  const interactions = createPanelInteractions(false, () => (calls += 1));
+
+  interactions.revealMoreAgents();
+  assert.ok(interactions.state.agentRowLimit > MAX_AGENT_ROWS);
+
+  interactions.toggleAgents();
+  assert.equal(interactions.state.agentsExpanded, true);
+  assert.equal(interactions.state.agentRowLimit, MAX_AGENT_ROWS, 'toggling resets the page');
+  assert.equal(calls, 2);
+});
+
+test('revealMoreAgents / revealMoreDispatches grow their own limit by one page, independently', () => {
+  const interactions = createPanelInteractions(false, () => {});
+
+  interactions.revealMoreAgents();
+  assert.equal(interactions.state.agentRowLimit, MAX_AGENT_ROWS * 2);
+  assert.equal(interactions.state.dispatchRowLimit, MAX_DISPATCH_ROWS, 'dispatches untouched');
+
+  interactions.revealMoreDispatches();
+  assert.equal(interactions.state.dispatchRowLimit, MAX_DISPATCH_ROWS * 2);
+});
+
+test('an omitted onChange never throws', () => {
+  const interactions = createPanelInteractions(false);
+  assert.doesNotThrow(() => {
+    interactions.toggleAgents();
+    interactions.revealMoreAgents();
+    interactions.revealMoreDispatches();
+  });
+});
+
+// ------------------------------------------------------------ root repaint
+
+test('createRootRepainter mounts one root the first time and reuses it after', () => {
+  const { mod } = recordingModule();
+  const repainter = createRootRepainter(elementFactory(mod));
+  assert.equal(repainter.ensureRoot(), repainter.ensureRoot());
+});
+
+test('patch replaces the mounted child in place when a removal primitive exists', () => {
+  const { mod, removed } = recordingModule();
+  const h = elementFactory(mod);
+  const repainter = createRootRepainter(h);
+  const root = repainter.ensureRoot();
+
+  const childA = h.text({}, ['a']);
+  assert.equal(repainter.patch(childA), true);
+  assert.deepEqual(root.children, [childA]);
+
+  const childB = h.text({}, ['b']);
+  assert.equal(repainter.patch(childB), true);
+  assert.deepEqual(root.children, [childB], 'the old child is gone, the new one took its place');
+  assert.deepEqual(removed, [childA]);
+});
+
+test('patch is a no-op before ensureRoot has run', () => {
+  const { mod } = recordingModule();
+  const h = elementFactory(mod);
+  assert.equal(createRootRepainter(h).patch(h.text({}, ['x'])), false);
+});
+
+test('without a removal primitive, only the first patch takes effect', () => {
+  const { mod } = recordingModule(null);
+  const h = elementFactory(mod);
+  const repainter = createRootRepainter(h);
+  repainter.ensureRoot();
+
+  assert.equal(repainter.patch(h.text({}, ['a'])), true, 'the first paint always happens');
+  assert.equal(
+    repainter.patch(h.text({}, ['b'])),
+    false,
+    'nothing to remove the first child with, so a second patch is refused rather than stacking',
   );
 });
 

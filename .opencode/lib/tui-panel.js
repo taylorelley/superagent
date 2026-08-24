@@ -30,6 +30,11 @@ import { truncate } from './board.js';
  * the bottom, which here is the live one. So both lists are capped and say how
  * many they are hiding. The full roster is a `/preset` away; the running
  * dispatches are not.
+ *
+ * These are also the defaults for `agentRowLimit`/`dispatchRowLimit` below —
+ * a caller can grow either at runtime (clicking "+N more") without ever
+ * asking this function to render more than the sidebar can actually hold at
+ * once; it is the caller's job to grow the limit one page at a time.
  */
 export const MAX_AGENT_ROWS = 8;
 export const MAX_DISPATCH_ROWS = 5;
@@ -100,9 +105,18 @@ export const renderPanel = (model, h) => {
     theme = {},
     snapshotState = 'ok',
     pluginVersion = null,
+    agentRowLimit = MAX_AGENT_ROWS,
+    dispatchRowLimit = MAX_DISPATCH_ROWS,
+    onToggleAgents,
+    onRevealMoreAgents,
+    onRevealMoreDispatches,
   } = model ?? {};
 
   const muted = (content) => h.text({ fg: theme.textMuted }, [content]);
+
+  /** A muted line the caller can click — accent instead of muted marks it as live. */
+  const actionable = (content, handler) =>
+    h.text({ fg: theme.accent, onMouseDown: handler }, [content]);
 
   /** A name on the left, a dimmer value on the right. */
   const pair = (left, right, rightColor = theme.textMuted) =>
@@ -128,24 +142,35 @@ export const renderPanel = (model, h) => {
         (subsystems.council ? ' · council on' : ''),
     ),
 
-    h.box({ width: '100%', flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 }, [
-      h.text({ fg: theme.accent }, ['Agents']),
-      h.text({ fg: theme.textMuted }, [String(agents.length)]),
-    ]),
+    h.box(
+      {
+        width: '100%',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: 1,
+        onMouseDown: onToggleAgents,
+      },
+      [
+        h.text({ fg: theme.accent }, ['Agents']),
+        h.text({ fg: theme.textMuted }, [String(agents.length)]),
+      ],
+    ),
     ...(agents.length === 0
       ? [muted('none registered')]
       : agentsExpanded
         ? [
             ...orderAgents(agents)
-              .slice(0, MAX_AGENT_ROWS)
+              .slice(0, agentRowLimit)
               .map((agent) => pair(agent.name, shortModel(agent.model) || INHERIT)),
-            ...(agents.length > MAX_AGENT_ROWS
-              ? [muted(`+${agents.length - MAX_AGENT_ROWS} more`)]
+            ...(agents.length > agentRowLimit
+              ? [actionable(`+${agents.length - agentRowLimit} more`, onRevealMoreAgents)]
               : []),
           ]
         : [
             ...collapsedAgents.map((agent) => pair(agent.name, shortModel(agent.model))),
-            ...(collapsedHidden > 0 ? [muted(`+${collapsedHidden} collapsed`)] : []),
+            ...(collapsedHidden > 0
+              ? [actionable(`+${collapsedHidden} collapsed`, onToggleAgents)]
+              : []),
           ]),
   ];
 
@@ -169,7 +194,7 @@ export const renderPanel = (model, h) => {
     children.push(muted('none this session'));
   } else {
     const ordered = orderRecords(records);
-    for (const record of ordered.slice(0, MAX_DISPATCH_ROWS)) {
+    for (const record of ordered.slice(0, dispatchRowLimit)) {
       const state = record.state ?? 'unknown';
       children.push(
         pair(
@@ -195,8 +220,10 @@ export const renderPanel = (model, h) => {
         }
       }
     }
-    if (ordered.length > MAX_DISPATCH_ROWS) {
-      children.push(muted(`+${ordered.length - MAX_DISPATCH_ROWS} more`));
+    if (ordered.length > dispatchRowLimit) {
+      children.push(
+        actionable(`+${ordered.length - dispatchRowLimit} more`, onRevealMoreDispatches),
+      );
     }
   }
 

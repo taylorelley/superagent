@@ -31,7 +31,7 @@ import fs from 'fs';
 import { resolveConfigDir } from '../lib/paths.js';
 import { loadConfig } from '../lib/config-schema.js';
 import { ROSTER } from '../lib/roster.js';
-import { renderPanel } from '../lib/tui-panel.js';
+import { renderPanel, MAX_AGENT_ROWS, MAX_DISPATCH_ROWS } from '../lib/tui-panel.js';
 import { snapshotPath, readSnapshot, sessionRecords, readVersion } from '../lib/tui-snapshot.js';
 import { debug, warn } from '../lib/log.js';
 
@@ -45,8 +45,35 @@ const SOLID_SPECIFIERS = [
   '@opentui/solid',
 ];
 
-/** Wrap OpenTUI's imperative element API in the `{ box, text }` the panel wants. */
-export const elementFactory = ({ createElement, setProp, insert }) => {
+/**
+ * Candidate names for a node-removal function on the OpenTUI module.
+ *
+ * `createElement`/`setProp`/`insert` are confirmed exports (that is how the
+ * panel has always rendered), but nothing here has ever needed to remove a
+ * node, so no removal export has ever been confirmed. These are tried, in
+ * order, as a best effort — see `elementFactory`'s `unmount` and
+ * "Still unverified" in docs/superagent.md.
+ */
+const REMOVE_EXPORT_NAMES = ['remove', 'removeChild', 'removeNode', 'unmount'];
+
+/**
+ * Wrap OpenTUI's imperative element API in the `{ box, text, mount, unmount }`
+ * the panel wants.
+ *
+ * `mount`/`unmount` are the low-level primitives the `tui()` entry's
+ * `repaint()` function uses to patch an already-mounted root node's children
+ * in place, instead of building a disconnected tree every poll tick and
+ * hoping the host will pick it up on its own. `unmount` is `null` when the
+ * module exposes nothing under any of `REMOVE_EXPORT_NAMES` — in that case
+ * in-place repaint is disabled and `repaint()` degrades to the single
+ * initial render this panel has always done.
+ */
+export const elementFactory = (mod) => {
+  const { createElement, setProp, insert } = mod ?? {};
+  const removeExport = REMOVE_EXPORT_NAMES.map((name) => mod?.[name]).find(
+    (fn) => typeof fn === 'function',
+  );
+
   const element = (tag, props, children = []) => {
     const node = createElement(tag);
     for (const [key, value] of Object.entries(props ?? {})) {
@@ -61,6 +88,8 @@ export const elementFactory = ({ createElement, setProp, insert }) => {
   return {
     box: (props, children) => element('box', props, children),
     text: (props, children) => element('text', props, children),
+    mount: (parent, child) => insert(parent, child),
+    unmount: removeExport ? (parent, child) => removeExport(parent, child) : null,
   };
 };
 
@@ -148,6 +177,94 @@ export const dispatchState = ({ hasFile, snapshot, panelVersion }) => {
   return 'ok';
 };
 
+/**
+ * Runtime UI state for the panel's click affordances.
+ *
+ * A tiny state machine, not part of `renderPanel` (which stays a pure
+ * function of its inputs): the Agents section's expanded/collapsed flag and
+ * both lists' row limits live here instead, seeded once from config and
+ * mutated only by a click. `onChange` is called after every mutation so the
+ * caller can drive a repaint — in practice the `tui()` entry's own
+ * `repaint()` — the same way a poll tick does, with no separate refresh path
+ * to keep in sync.
+ *
+ * Exported and tested on its own, the same way `panelAgents`/`dispatchState`
+ * are: the click handlers this returns end up wired into a live OpenTUI node
+ * that only exists once the host actually renders the panel, so the state
+ * machine itself is what unit tests can exercise without a terminal.
+ */
+export const createPanelInteractions = (agentsExpandedDefault, onChange) => {
+  let agentsExpanded = agentsExpandedDefault === true;
+  let agentRowLimit = MAX_AGENT_ROWS;
+  let dispatchRowLimit = MAX_DISPATCH_ROWS;
+
+  return {
+    get state() {
+      return { agentsExpanded, agentRowLimit, dispatchRowLimit };
+    },
+    // Toggling always resets the page: re-expanding after collapsing should
+    // not resume mid-page from a previous session of clicking "+N more".
+    toggleAgents: () => {
+      agentsExpanded = !agentsExpanded;
+      agentRowLimit = MAX_AGENT_ROWS;
+      onChange?.();
+    },
+    revealMoreAgents: () => {
+      agentRowLimit += MAX_AGENT_ROWS;
+      onChange?.();
+    },
+    revealMoreDispatches: () => {
+      dispatchRowLimit += MAX_DISPATCH_ROWS;
+      onChange?.();
+    },
+  };
+};
+
+/**
+ * Keeps one root node alive across repaints and patches its child in place.
+ *
+ * The reason this exists at all: `requestRender()` repaints whatever node
+ * tree the host already has, but nothing confirms the host re-invokes
+ * `sidebar_content` to hand it a *new* tree on every poll tick or click (see
+ * the `tui()` entry's own comment, and docs/superagent.md). So the panel
+ * mounts one root the first time it is asked for content, and from then on
+ * repaints by swapping that root's child, using `h.mount`/`h.unmount` — the
+ * same primitives `elementFactory` exposes.
+ *
+ * Isolated from `tui()` so it can be exercised with a recording `h`, exactly
+ * like `elementFactory` itself already is — no OpenTUI or terminal needed.
+ */
+export const createRootRepainter = (h) => {
+  let root = null;
+  let mountedChild = null;
+
+  return {
+    get root() {
+      return root;
+    },
+    /** Create the root once, and return it every time after. */
+    ensureRoot: () => {
+      if (!root) root = h.box({ width: '100%', flexDirection: 'column' }, []);
+      return root;
+    },
+    /**
+     * Swap the mounted child for `next`. Returns whether it actually did —
+     * false before `ensureRoot()` has run, and false after the first paint
+     * when `h.unmount` is unavailable: swapping without a way to remove the
+     * old child would only stack a new tree on top of it, which is worse
+     * than leaving the first, correct render alone.
+     */
+    patch: (next) => {
+      if (!root) return false;
+      if (mountedChild && !h.unmount) return false;
+      if (mountedChild) h.unmount(root, mountedChild);
+      h.mount(root, next);
+      mountedChild = next;
+      return true;
+    },
+  };
+};
+
 export default {
   id: 'superagent:tui',
 
@@ -187,9 +304,67 @@ export default {
     let stamp = mtimeOf(file);
     let hasFile = stamp > 0;
     let snapshot = hasFile ? readSnapshot(file) : null;
+    let theme = {};
 
-    // Only re-parse when the file actually moved, and only ask for a repaint
-    // when something changed: this runs for the life of the session, next to a
+    /**
+     * The panel does not actually go live just by calling
+     * `api.renderer.requestRender()` on its own: that repaints whatever node
+     * tree the host already has, but nothing here has confirmed the host ever
+     * calls `sidebar_content` again after the first mount — and observed
+     * behaviour says it does not (the panel only refreshes when something
+     * else, like switching to a subagent view and back, forces a remount). So
+     * instead of trusting a re-invocation that may never come, `repainter`
+     * keeps its own root node alive and this repaints by patching that root's
+     * child in place, on every poll tick and every click. See
+     * docs/superagent.md, "The sidebar panel" for the full story and its
+     * "Still unverified" list for what this still needs confirming against a
+     * live host.
+     */
+    const repainter = createRootRepainter(h);
+
+    if (!h.unmount) {
+      warn(
+        'tui panel: the OpenTUI module exposes no node-removal function this plugin ' +
+          'recognizes, so live in-place repaint is disabled; the panel will only refresh ' +
+          'when the host itself re-invokes sidebar_content (e.g. switching views). ' +
+          'See docs/superagent.md.',
+      );
+    }
+
+    const repaint = () => {
+      if (!repainter.root) return;
+      const sessionID = currentSessionID(api, undefined, snapshot);
+      const records = sessionRecords(snapshot, sessionID);
+      const state = dispatchState({ hasFile, snapshot, panelVersion: version });
+      debug(
+        `tui panel: file=${file} mtime=${stamp} state=${state} ` +
+          `session=${sessionID} records=${records.length}`,
+      );
+      const next = renderPanel(
+        {
+          version,
+          preset: settings.preset,
+          subsystems,
+          agents: panelAgents(settings, api?.state?.config),
+          records,
+          snapshotState: state,
+          pluginVersion: snapshot?.pluginVersion ?? null,
+          theme,
+          ...interactions.state,
+          onToggleAgents: interactions.toggleAgents,
+          onRevealMoreAgents: interactions.revealMoreAgents,
+          onRevealMoreDispatches: interactions.revealMoreDispatches,
+        },
+        h,
+      );
+
+      if (repainter.patch(next)) api?.renderer?.requestRender?.();
+    };
+
+    const interactions = createPanelInteractions(settings.tui?.agents?.expanded, () => repaint());
+
+    // Only re-parse when the file actually moved, and only repaint when
+    // something changed: this runs for the life of the session, next to a
     // renderer whose whole job is not doing unnecessary work.
     const poll = () => {
       const current = api?.state?.path?.directory ?? directory;
@@ -200,7 +375,7 @@ export default {
       stamp = mtime;
       hasFile = mtime > 0;
       snapshot = hasFile ? readSnapshot(next) : null;
-      api?.renderer?.requestRender?.();
+      repaint();
     };
 
     const timer = setInterval(poll, POLL_MS);
@@ -212,29 +387,13 @@ export default {
       slots: {
         // The argument is the slot context the host renders with, not the slot
         // props the type declares — `{ theme }`, live, so it is preferred over
-        // the api's copy.
+        // the api's copy. Captured into the outer `theme` variable so `repaint()`
+        // can use it from a poll tick or a click, neither of which get a context.
         sidebar_content: (context) => {
-          const sessionID = currentSessionID(api, context, snapshot);
-          const records = sessionRecords(snapshot, sessionID);
-          const state = dispatchState({ hasFile, snapshot, panelVersion: version });
-          debug(
-            `tui panel: file=${file} mtime=${stamp} state=${state} ` +
-              `session=${sessionID} records=${records.length}`,
-          );
-          return renderPanel(
-            {
-              version,
-              preset: settings.preset,
-              subsystems,
-              agents: panelAgents(settings, api?.state?.config),
-              agentsExpanded: settings.tui?.agents?.expanded === true,
-              records,
-              snapshotState: state,
-              pluginVersion: snapshot?.pluginVersion ?? null,
-              theme: context?.theme?.current ?? api?.theme?.current ?? {},
-            },
-            h,
-          );
+          theme = context?.theme?.current ?? api?.theme?.current ?? {};
+          const root = repainter.ensureRoot();
+          repaint();
+          return root;
         },
       },
     });
