@@ -199,11 +199,19 @@ off everything.
 The roster is **collapsed by default**: the Agents header carries the count and
 only the routed (non-inherit) slots are listed, since a pinned model is the
 part a reader cannot guess. The `+N collapsed` line says how many are hidden.
-Click the header, or the `+N collapsed` line, to expand it at runtime — no
+Clicking the header, or the `+N collapsed` line, toggles this state — no
 config edit or restart needed; `{"tui": {"agents": {"expanded": true}}}` in
 `superagent.json` only sets the *starting* state now. Dispatches are always
 expanded — they are the live section — and both lists' `+N more` lines are
-clickable too, revealing one more page (the same row cap again) per click.
+clickable too, in principle revealing one more page (the same row cap again)
+per click. **What a click actually shows on screen is weaker than that,
+though** — see "Staying live" just below: a click only flips this state and
+asks for a repaint, and that repaint runs into the same confirmed
+`createElement`-outside-a-render-pass failure a poll tick does whenever it
+fires from outside the host's own `sidebar_content` call. So a click is not
+guaranteed to visibly expand anything by itself; the new state becomes
+visible whenever the host next re-renders the panel for its own reasons
+(e.g. switching views), the same as any other data change.
 
 ### Staying live: why a poll alone was not enough, and why patching in place doesn't work either
 
