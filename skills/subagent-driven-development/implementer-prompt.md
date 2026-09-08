@@ -32,8 +32,13 @@ Subagent (general-purpose):
     ## Your Job
 
     Once you're clear on requirements:
-    1. Implement exactly what the task specifies
-    2. Write tests (following TDD if task says to)
+    1. For any new code (new function, method, module, or behavior change),
+       follow TDD: write a failing test first (RED), confirm it fails for
+       the expected reason, then write the minimum code to pass it (GREEN),
+       then refactor with tests green. Do this for every unit of new code,
+       not just when the brief says "TDD" explicitly — TDD is the default,
+       not an opt-in.
+    2. Implement exactly what the task specifies
     3. Verify implementation works
     4. Commit your work
     5. Self-review (see below)
@@ -110,7 +115,8 @@ Subagent (general-purpose):
 
     **Testing:**
     - Do tests actually verify behavior (not just mock behavior)?
-    - Did I follow TDD if required?
+    - Did I follow TDD for every piece of new code — failing test first,
+      then the minimum code to pass it?
     - Are tests comprehensive?
     - Is the test output pristine (no stray warnings or noise)?
 
@@ -130,9 +136,12 @@ Subagent (general-purpose):
     Write your full report to [REPORT_FILE]:
     - What you implemented (or what you attempted, if blocked)
     - What you tested and test results
-    - **TDD Evidence** (if TDD was required for this task):
+    - **TDD Evidence** (for every piece of new code you wrote):
       - RED: command run, relevant failing output before implementation, and why the failure was expected
       - GREEN: command run and relevant passing output after implementation
+      If a task truly contains no new code (pure config/data edits with
+      nothing to unit-test), say so explicitly instead of omitting this
+      section.
     - Files changed
     - Self-review findings (if any)
     - Any issues or concerns

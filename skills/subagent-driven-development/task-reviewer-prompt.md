@@ -81,6 +81,14 @@ Subagent (general-purpose):
     running it. If you cannot run commands in this environment, name the
     test you would run.
 
+    TDD is mandatory for every unit of new code in this diff, not
+    conditional on the brief mentioning it. If the diff adds new code and
+    the report's TDD Evidence (RED/GREEN) is missing, thin, or clearly
+    written after the fact (e.g. no failing-test output, or tests that
+    read as written to match already-passing code), report it as an
+    Important finding under Code Quality — "TDD not evidenced for
+    [file:line]." Do not treat this as a Minor/nice-to-have.
+
     Warnings or other noise in the implementer's reported test output are
     findings — test output should be pristine.
 
@@ -123,6 +131,8 @@ Subagent (general-purpose):
     **Tests:**
     - Do the new and changed tests verify real behavior, not mocks?
     - Are the task's edge cases covered?
+    - Is there RED/GREEN TDD evidence for every new unit of code (see Tests
+      section above)?
 
     **Structure:**
     - Does each file have one clear responsibility with a well-defined interface?
