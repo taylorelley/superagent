@@ -205,29 +205,60 @@ config edit or restart needed; `{"tui": {"agents": {"expanded": true}}}` in
 expanded — they are the live section — and both lists' `+N more` lines are
 clickable too, revealing one more page (the same row cap again) per click.
 
-### Staying live: why a poll alone was not enough
+### Staying live: why a poll alone was not enough, and why patching in place doesn't work either
 
 The panel polls its snapshot file once a second and used to call OpenCode's
 `renderer.requestRender()` when it changed, on the assumption that this would
 make the host re-run `sidebar_content` and pick up the new data. In practice
 it did not: `requestRender()` repaints whatever node tree the host already
-has, but nothing confirmed the host ever calls `sidebar_content` again after
-the first mount, and observed behaviour said it does not — the panel only
-refreshed after something else forced a remount, such as switching to a
-subagent's view and back.
+has, but the host does not call `sidebar_content` again after the first
+mount on its own — the panel only refreshed after something else forced a
+remount, such as switching to a subagent's view and back.
 
-So the panel no longer waits for a re-invocation that may never come. It
-keeps one root node alive for the life of the registration
-(`createRootRepainter` in `.opencode/tui/superagent-tui.js`) and, on every
-poll tick and every click, patches that root's child in place — unmounting
-the old render and mounting the new one — before calling `requestRender()`
-to actually paint it. This depends on the OpenTUI module exposing some
-removal primitive alongside the `insert()` it has always used to build a
-tree; `elementFactory` tries a short list of plausible names
-(`remove`/`removeChild`/`removeNode`/`unmount`) and, if none exist, degrades
-to the single initial render the panel has always done rather than stacking
-un-removed content. See "Still unverified" below — this has not yet been
-confirmed against a live host.
+An earlier version of this plugin tried to work around that by keeping one
+root node alive for the life of the registration and patching its child in
+place — unmounting the old render and mounting the new one — from the poll
+tick and from clicks, on the theory that `@opentui/solid` would expose some
+`insert()`-adjacent removal primitive. **Both halves of that theory are now
+confirmed false against a real installed OpenCode + `@opentui/solid`:**
+
+- The module exports none of `remove`/`removeChild`/`removeNode`/`unmount`.
+  It is a Solid.js fine-grained reactive renderer (`RendererContext`,
+  `createDynamic`, `Slot`/`SlotRenderable`, `effect`, `memo` are among its real
+  exports) — node lifetime there is owned by Solid's reactive graph and
+  disposed through it, not removed by an imperative call. `elementFactory`'s
+  `unmount` is therefore always `null` in production.
+- More fundamentally, `createElement` (and so `h.box`/`h.text`) throws `Error:
+  No renderer found` when called from anywhere outside the synchronous call
+  stack the host uses to invoke `sidebar_content` itself. A poll tick and a
+  click handler both run later, outside that stack, so *any* attempt to
+  rebuild the tree from either one fails — not merely "degrades to no patch,"
+  but throws. This was previously undocumented; it explains why the panel
+  never updated live even though nothing visibly crashed (the exception was
+  uncaught inside a bare `setInterval` callback and swallowed by the host
+  runtime rather than surfaced).
+
+Because of the second point, keeping a long-lived root across separate
+`sidebar_content` invocations was actively harmful, not just ineffective: a
+genuine remount (e.g. returning from a subagent's view) *does* run inside a
+valid render pass, but the panel kept handing the host back the *original*
+root object from the very first mount — a node whose underlying reactive
+scope had likely already been torn down when the host displayed the
+intervening view. Re-inserting a disposed node rendered nothing, which is why
+the panel disappeared on return instead of refreshing.
+
+The fix: `repaint()`'s tree-building and patch call are wrapped so a throw
+from outside a render pass degrades to "nothing happened this tick" instead
+of an uncaught exception (`.opencode/tui/superagent-tui.js`), and
+`sidebar_content` now builds a **fresh** `createRootRepainter` (and so a
+fresh root) on every invocation instead of reusing one across the whole
+registration's lifetime. There is no true out-of-band live push against this
+host — that would require binding the panel's dynamic values through Solid's
+own reactivity (e.g. signals read by an effect) rather than the raw
+`createElement`/`insert` calls this module uses, which is a larger change —
+but the panel now always shows this project's *current* data whenever the
+host does re-render it, and can no longer throw doing so or go blank from a
+stale node.
 
 Dispatch states carry glyphs so an outcome reads at a glance: `●` running,
 `✓` completed, `✗` error, `○` cancelled.
@@ -277,10 +308,13 @@ Three constraints shape it, all verified below:
   panel polls once a second. Only the board crosses: the version, preset and
   roster are recomputed on the TUI side from the same modules the plugin uses,
   so there is nothing to keep in sync.
-- **It patches itself rather than trusting a re-render.** See "Staying live"
-  above — the panel mounts one root node once and repaints by swapping that
-  node's child, using `mount`/`unmount` primitives `elementFactory` derives
-  from the same OpenTUI module.
+- **It rebuilds fresh on every host-driven render rather than patching
+  in place.** See "Staying live" above — patching a long-lived root from a
+  poll tick or a click is confirmed impossible against the real host
+  (`createElement` requires an active render pass, and the module exposes no
+  removal primitive to patch with anyway), so the panel now builds a new root
+  each time the host invokes `sidebar_content`, and simply cannot push a
+  refresh in between those invocations.
 - **Clicks use OpenTUI's own event props, not an OpenCode API.** OpenCode's
   plugin API has no click/keybind surface (a `TuiWidget`/`onActivate`/`keybind`
   proposal exists only as an open, unimplemented feature request —
@@ -688,22 +722,25 @@ against a live model.
   [reported failure](https://github.com/code-yeongyu/oh-my-openagent/issues/3219).
 - Model routing with real per-slot models. The live testing ran with every slot
   inheriting, since the test environment has one usable provider.
-- Whether the live OpenCode TUI host re-invokes a plugin's `sidebar_content`
-  slot function after the first mount, and what `renderer.requestRender()`
-  actually does if not. Inferred from observed behaviour (the panel only
-  refreshed after something forced a remount, e.g. switching views) and from
-  how `@opentui/solid`'s React integration is documented to work (mutate
-  existing nodes, then call `requestRender()` to paint) — not read out of
-  `sst/opencode`/`anomalyco/opencode` source directly, unlike the rest of this
-  section. The fix built on this inference (`createRootRepainter`, "Staying
-  live" above) is written to degrade safely if the inference is wrong.
-- Whether the OpenTUI module reachable through
-  `opentui:runtime-module:%40opentui%2Fsolid` exposes a node-removal function
-  under any of `remove`/`removeChild`/`removeNode`/`unmount`
-  (`REMOVE_EXPORT_NAMES` in `.opencode/tui/superagent-tui.js`). If none of
-  these match the real export name, in-place repaint silently disables itself
-  (a debug warning names it) and the panel falls back to its previous,
-  single-render behaviour.
+- ~~Whether the live OpenCode TUI host re-invokes a plugin's `sidebar_content`
+  slot function after the first mount~~ **Confirmed**, by installing a real
+  OpenCode (`npm install opencode-ai`) and its bundled `@opentui/solid`, and
+  driving the TUI in a scripted terminal: it does not re-invoke on its own —
+  `renderer.requestRender()` alone does not either — only something that
+  forces a remount does. See "Staying live" above.
+- ~~Whether the OpenTUI module... exposes a node-removal function under any of
+  `remove`/`removeChild`/`removeNode`/`unmount`~~ **Confirmed false**: the real
+  module's exports were dumped directly (`Object.keys` on the imported
+  module) and contain none of them. It is a Solid.js reactive renderer
+  (`RendererContext`, `createDynamic`, `effect`, `memo`, …); disposal is a
+  property of Solid's reactive graph, not an exported function. `elementFactory`'s
+  `unmount` is `null` in every real installation. See "Staying live" above —
+  this also surfaced a second, previously unknown failure: `createElement`
+  itself throws `Error: No renderer found` when invoked outside the host's own
+  synchronous `sidebar_content` call (confirmed via a live stack trace), which
+  is why the old poll-driven patch attempt never worked and why the panel
+  could go blank on a real remount. Both are fixed in
+  `.opencode/tui/superagent-tui.js`.
 - Whether OpenTUI's `onMouseDown` prop, attached via the same virtual import,
   is actually delivered to a plugin-contributed `sidebar_content` slot by a
   live OpenCode TUI host — the Agents header and the `+N more` lines carry the
