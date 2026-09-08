@@ -268,7 +268,10 @@ export const createRootRepainter = (h) => {
 export default {
   id: 'superagent:tui',
 
-  tui: async (api, _options, meta) => {
+  // `deps` is not part of OpenCode's call signature — it is an injection seam
+  // so tests can hand `tui()` a recording element factory instead of the real
+  // `loadElementFactory()`, which only ever resolves against a live host.
+  tui: async (api, _options, meta, deps = {}) => {
     const configDir = resolveConfigDir();
     const directory = api?.state?.path?.directory ?? process.cwd();
     const settings = loadConfig({ configDir, projectDir: directory });
@@ -277,7 +280,7 @@ export default {
       return;
     }
 
-    const h = await loadElementFactory();
+    const h = await (deps.loadElementFactory ?? loadElementFactory)();
     if (!h) {
       warn(
         'could not load the OpenTUI element factory; the Superagent sidebar panel is not available',
@@ -307,32 +310,44 @@ export default {
     let theme = {};
 
     /**
-     * The panel does not actually go live just by calling
-     * `api.renderer.requestRender()` on its own: that repaints whatever node
-     * tree the host already has, but nothing here has confirmed the host ever
-     * calls `sidebar_content` again after the first mount — and observed
-     * behaviour says it does not (the panel only refreshes when something
-     * else, like switching to a subagent view and back, forces a remount). So
-     * instead of trusting a re-invocation that may never come, `repainter`
-     * keeps its own root node alive and this repaints by patching that root's
-     * child in place, on every poll tick and every click. See
-     * docs/superagent.md, "The sidebar panel" for the full story and its
-     * "Still unverified" list for what this still needs confirming against a
-     * live host.
+     * Confirmed against a live host (see docs/superagent.md, "Staying live"):
+     * `createElement` (and so `h.box`/`h.text`) throws `Error:
+     * No renderer found` when called from outside the synchronous call stack
+     * the host uses to invoke `sidebar_content` — a poll tick or a click
+     * handler does not qualify, only the slot invocation itself does. So a
+     * kept-alive root that gets rebuilt from a timer can never work: every
+     * such rebuild throws, and `@opentui/solid` additionally exposes no
+     * `remove`/`removeChild`/`removeNode`/`unmount` export to patch one in
+     * place even where that were possible. `repainter` is therefore rebuilt
+     * from scratch on every `sidebar_content` call rather than reused across
+     * calls — reusing one meant handing the host back a node from a possibly
+     * already-torn-down render pass (e.g. after viewing a subagent session and
+     * returning), which is what made the panel go blank instead of refreshing.
      */
-    const repainter = createRootRepainter(h);
+    let repainter = null;
 
     if (!h.unmount) {
       warn(
         'tui panel: the OpenTUI module exposes no node-removal function this plugin ' +
-          'recognizes, so live in-place repaint is disabled; the panel will only refresh ' +
-          'when the host itself re-invokes sidebar_content (e.g. switching views). ' +
-          'See docs/superagent.md.',
+          'recognizes; live in-place repaint from a poll tick or click is not possible ' +
+          "against this host (confirmed: creating elements outside the host's own render " +
+          'call throws). The panel only refreshes when the host itself re-invokes ' +
+          'sidebar_content (e.g. switching views). See docs/superagent.md.',
       );
     }
 
+    /**
+     * Rebuilds the panel tree and patches it into `repainter`'s root.
+     *
+     * Only ever safe to call synchronously from within a `sidebar_content`
+     * invocation — see the comment above `repainter`. Called from other
+     * places anyway (a poll tick, a click) on the chance a given host or
+     * OpenTUI version behaves differently; wrapped so a throw there degrades
+     * to "nothing happened this tick" instead of an uncaught exception, per
+     * this module's own rule that nothing here may take down the session.
+     */
     const repaint = () => {
-      if (!repainter.root) return;
+      if (!repainter?.root) return;
       const sessionID = currentSessionID(api, undefined, snapshot);
       const records = sessionRecords(snapshot, sessionID);
       const state = dispatchState({ hasFile, snapshot, panelVersion: version });
@@ -340,27 +355,31 @@ export default {
         `tui panel: file=${file} mtime=${stamp} state=${state} ` +
           `session=${sessionID} records=${records.length}`,
       );
-      const next = renderPanel(
-        {
-          version,
-          preset: settings.preset,
-          subsystems,
-          agents: panelAgents(settings, api?.state?.config),
-          records,
-          snapshotState: state,
-          pluginVersion: snapshot?.pluginVersion ?? null,
-          updateAvailable: snapshot?.updateAvailable ?? false,
-          latestVersion: snapshot?.latestVersion ?? null,
-          theme,
-          ...interactions.state,
-          onToggleAgents: interactions.toggleAgents,
-          onRevealMoreAgents: interactions.revealMoreAgents,
-          onRevealMoreDispatches: interactions.revealMoreDispatches,
-        },
-        h,
-      );
+      try {
+        const next = renderPanel(
+          {
+            version,
+            preset: settings.preset,
+            subsystems,
+            agents: panelAgents(settings, api?.state?.config),
+            records,
+            snapshotState: state,
+            pluginVersion: snapshot?.pluginVersion ?? null,
+            updateAvailable: snapshot?.updateAvailable ?? false,
+            latestVersion: snapshot?.latestVersion ?? null,
+            theme,
+            ...interactions.state,
+            onToggleAgents: interactions.toggleAgents,
+            onRevealMoreAgents: interactions.revealMoreAgents,
+            onRevealMoreDispatches: interactions.revealMoreDispatches,
+          },
+          h,
+        );
 
-      if (repainter.patch(next)) api?.renderer?.requestRender?.();
+        if (repainter.patch(next)) api?.renderer?.requestRender?.();
+      } catch (err) {
+        debug(`tui panel: repaint outside a render pass failed harmlessly: ${err.message}`);
+      }
     };
 
     const interactions = createPanelInteractions(settings.tui?.agents?.expanded, () => repaint());
@@ -393,6 +412,11 @@ export default {
         // can use it from a poll tick or a click, neither of which get a context.
         sidebar_content: (context) => {
           theme = context?.theme?.current ?? api?.theme?.current ?? {};
+          // A fresh repainter (and so a fresh root) every call: this is the
+          // one place `createElement` is confirmed safe to run, so there is
+          // nothing to gain — and a stale-node risk to lose — by trying to
+          // keep the previous call's root alive across it.
+          repainter = createRootRepainter(h);
           const root = repainter.ensureRoot();
           repaint();
           return root;

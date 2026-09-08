@@ -332,6 +332,72 @@ test('the panel is not registered when OpenTUI is unavailable, and does not thro
   assert.equal(registered, 0, 'a panel that cannot render must not be registered');
 });
 
+// ---------------------------------------------- live-host confirmed bugs
+//
+// Both regressions below were confirmed against a real installed OpenCode +
+// `@opentui/solid`: (1) `createElement` throws `Error: No renderer found`
+// when called from outside the host's own synchronous `sidebar_content`
+// invocation — a poll tick or click qualifies as "outside"; (2) the real
+// module exports none of `remove`/`removeChild`/`removeNode`/`unmount`. See
+// docs/superagent.md.
+
+test('sidebar_content builds a fresh root on every invocation, not a reused one', async () => {
+  const { mod } = recordingModule();
+  let registeredSlots;
+  const api = stubApi({ slots: { register: (opts) => (registeredSlots = opts.slots) } });
+
+  await entry.tui(api, undefined, {}, { loadElementFactory: async () => elementFactory(mod) });
+
+  const rootA = registeredSlots.sidebar_content({ theme: { current: {} } });
+  const rootB = registeredSlots.sidebar_content({ theme: { current: {} } });
+  assert.notEqual(rootA, rootB, 'a stale root from a torn-down view must never be handed back');
+});
+
+/** Finds the first node in a recording-module tree with an onMouseDown handler. */
+const findClickable = (node) => {
+  if (node?.props?.onMouseDown) return node;
+  for (const child of node?.children ?? []) {
+    const found = findClickable(child);
+    if (found) return found;
+  }
+  return null;
+};
+
+test('a repaint reached from outside sidebar_content (poll/click) cannot crash the session', async () => {
+  // Simulates the confirmed live-host failure: createElement throws once the
+  // host's own render pass for that `sidebar_content` call has ended — which
+  // is exactly when a poll tick or a click handler fires.
+  let insideRenderPass = true;
+  const throwingMod = {
+    createElement: (tag) => {
+      if (!insideRenderPass) throw new Error('No renderer found');
+      return { tag, props: {}, children: [] };
+    },
+    setProp: (node, key, value) => {
+      node.props[key] = value;
+    },
+    insert: (node, child) => node.children.push(child),
+  };
+
+  let registeredSlots;
+  const api = stubApi({ slots: { register: (opts) => (registeredSlots = opts.slots) } });
+  await entry.tui(
+    api,
+    undefined,
+    {},
+    { loadElementFactory: async () => elementFactory(throwingMod) },
+  );
+
+  // The initial, host-driven call is the one confirmed-safe place to render.
+  const root = registeredSlots.sidebar_content({ theme: { current: {} } });
+  const clickable = findClickable(root);
+  assert.ok(clickable, 'the Agents header should have registered a click handler');
+
+  // A click fires later, outside that call stack, on the real host.
+  insideRenderPass = false;
+  assert.doesNotThrow(() => clickable.props.onMouseDown());
+});
+
 test('the panel is not registered when it is switched off', async () => {
   let registered = 0;
   const api = stubApi({ slots: { register: () => (registered += 1) } });
