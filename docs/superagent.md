@@ -184,44 +184,89 @@ the default `latest` strategy — stripped and rewritten every turn, and `/board
 spends a model turn printing state the plugin already holds. None of that is
 much use to the human at the keyboard.
 
-So Superagent also renders a panel into OpenCode's TUI sidebar:
+So Superagent also renders a panel into OpenCode's TUI sidebar. It answers,
+top to bottom, what the plan is, what the main agent is doing, and what each
+subagent is doing:
 
 ```text
- Superagent                  v0.1.0
- team · agents on · board on
+ Plan                            2/4
+ 2026-11-02-demo.md
+ ▸ Task 2: Count files
 
- Agents                          10
- oracle               claude-opus-4-1
- +9 collapsed
+ Main · brainstorming
+ ● subagent general             0:06
 
- Dispatches                     2/6
- ● code-reviewer              running
-   Review task 3 against the plan
- ● implementer           running (bg)
-   Add the failing test for snaps…
-   owns .opencode/lib/**
- ✓ librarian                completed
- +1 more
+ Subagents                       1/2
+ ● general · Count files        0:06
+   shell sleep 6 && ls
+   owns src/api/**
+   ⚠ overlaps implementer
+ ✓ explore · Find callers       1:05
+   → Found 3 call sites in tui-…
+
+ Superagent v0.1.0   team · 10 agents
 ```
 
-Live, free, and always the current state: the version and preset answer "did my
-update land" and "why is it behaving like that", and the dispatch list answers
-"what is running and what is it holding" — the ownership line especially, since
-that is what says two agents are about to collide.
+(Captured from OpenCode 2.2.5's real TUI, with the conflict and second row
+added for illustration.)
 
-Both lists are capped, because a panel that outgrows the sidebar is silently
-clipped from the bottom, which is where the live section is. Turn the panel off
-with `{"tui": {"enabled": false}}`, or with `SUPERAGENT_DISABLE=1`, which turns
-off everything.
+- **Plan** — the `docs/superagent/plans/*.md` file the session is working
+  from, found in the tool calls of the session or of one of its subagents
+  (under `team` the orchestrator may not edit files, so a subagent usually
+  writes it). `2/4` counts ticked `- [x]` steps; `▸` is the task holding the
+  first unticked one. A plan without checkboxes reports its task count. No
+  plan, no section.
+- **Main** — the skill the main agent last loaded (the "→ Skill" line in the
+  main pane scrolls away; this one stays), what it is doing right now and for
+  how long, or `idle`. Between tool calls it says `thinking`.
+- **Subagents** — one row per dispatch: agent and objective, then a timer
+  while it runs or its duration once it is done. A running row adds the tool
+  call its child session is making right now (the main pane only shows
+  "General Subagent — Count files"; what happens inside the child is otherwise
+  invisible), the files it declared it owns, and — in the warning colour — any
+  running dispatch it overlapped when it started. A finished row adds what
+  came back (`→ …`), or why it failed. States carry glyphs so an outcome reads
+  at a glance: `●` running, `✓` completed, `✗` error, `○` cancelled.
+- **Footer** — the version (did my update land) and the preset with its roster
+  size. A subsystem switched off gets its own line (`board off`); the defaults
+  being on is not news.
 
-The roster is **collapsed by default**: the Agents header carries the count and
-only the routed (non-inherit) slots are listed, since a pinned model is the
-part a reader cannot guess. The `+N collapsed` line says how many are hidden.
-Clicking the header, or the `+N collapsed` line, toggles this state — no
-config edit or restart needed; `{"tui": {"agents": {"expanded": true}}}` in
-`superagent.json` only sets the *starting* state. Dispatches are always
-expanded — they are the live section — and both lists' `+N more` lines are
-clickable too, revealing one more page (the same row cap again) per click.
+The panel deliberately leaves out what OpenCode's own sidebar already shows —
+todos, context use, MCP servers, changed files.
+
+Everything is capped, because a panel that outgrows the sidebar is silently
+clipped from the bottom. The subagent list shows five rows, with detail lines
+for the first three running ones, and its `+N more` line reveals one more page
+per click. Every row is fitted to the sidebar's 35-column text area (measured
+in 2.2.5), left half truncated first, so two halves never run together. Turn
+the panel off with `{"tui": {"enabled": false}}`, or with
+`SUPERAGENT_DISABLE=1`, which turns off everything.
+
+The roster is hidden by default — it is configuration, not activity. Clicking
+the footer toggles it (routed slots first, then the rest, as `inherit`), and
+its `+N more` line pages through a long one. `{"tui": {"agents": {"expanded":
+true}}}` in `superagent.json` only sets the *starting* state.
+
+### Where the data comes from
+
+Two sources, split by what each side can know:
+
+- **The host's session store** (`context.data.session`: `get`, `family`,
+  `status`, `message.list`) — the plan path, the main agent's skill and
+  current tool call, and each child session's current tool call. Every tool
+  call is already there as a `{ type: 'tool', name, state: { status, input } }`
+  part on an assistant message, so reading it costs nothing and can never
+  disagree with the main pane. A skill loaded through the `skill` tool does not
+  emit `session.skill.activated` in 2.2.5, which is why the skill is read from
+  tool parts. See `.opencode/lib/tui-activity.js`.
+- **The board snapshot** — what only the server knows: each dispatch's
+  ownership claims and conflicts, its outcome and result, and the update
+  notice. The server links each dispatch to its child session — from the tool
+  result for a background dispatch, from `session.created` (whose payload
+  carries `parentID`, the agent and, as its title, the dispatch description)
+  for a foreground one — so the panel can join the two. A record that was never
+  linked falls back to the running child with the same agent and title, and a
+  running child no record accounts for still gets a row.
 
 ### Staying live
 
@@ -230,19 +275,21 @@ OpenTUI finds its renderer through Solid context. So the panel's root is filled
 with a *reactive* `insert(root, () => …)`: the snapshot poll (once a second,
 re-parsed only when the file's mtime moves) and every click bump one Solid
 signal, and Solid re-runs that insert inside the slot's own owner, where
-creating elements is legal. The panel repaints in place, immediately.
+creating elements is legal. The panel repaints in place, immediately. While
+anything is running the poll also repaints once a second, so the timers tick;
+with nothing running, an unchanged panel is left alone. The plan file is
+re-read only when its mtime moves.
 
 That replaces the OpenCode 1 situation, where the panel could only refresh when
 the host happened to re-invoke `sidebar_content` (creating elements from a poll
 tick threw `No renderer found`, and `@opentui/solid` has no imperative removal
 export to patch a tree with). Confirmed against OpenCode 2.2.5 in a real
-terminal: a second dispatch moved the Dispatches line from `0/1` to `0/2`, and
-a background dispatch settled to `completed (bg)`, with no view switch.
+terminal, driven through a pty with a scripted model: the plan, the main
+agent's skill, a subagent's live `shell` call with a ticking timer, then
+`thinking`, then `✓` with its duration and result all appeared with no view
+switch.
 
-Dispatch states carry glyphs so an outcome reads at a glance: `●` running,
-`✓` completed, `✗` error, `○` cancelled.
-
-The Dispatches section can tell you why it is empty:
+The Subagents section can tell you why it is empty:
 
 | State | Meaning |
 |---|---|
@@ -274,19 +321,20 @@ remove it.)
   `@opentui/core` and `@opencode/plugin/tui`, for every plugin, including one
   installed under `node_modules`). If either import fails the panel is not
   registered, and nothing else is affected.
-- **The roster comes from the host.** The Agents section lists the roster
-  entries present in `context.data.location.agent.list()`, so a name that was
+- **The roster comes from the host.** The expanded roster lists the entries
+  present in `context.data.location.agent.list()`, so a name that was
   skipped for a collision is not claimed as ours.
 - **The board reaches it through a file.** The server and TUI parts are
   separate module graphs — and with a remote server, separate machines — so
   `board.js`'s in-memory ledger is not visible from the panel. Each change is
   projected to `~/.config/opencode/superagent/tui-<hash-of-project-dir>.json`,
   which the panel polls. Only the board crosses: the version, preset and
-  roster are recomputed on the TUI side from the same modules the plugin uses.
+  roster are recomputed on the TUI side from the same modules the plugin uses,
+  and live activity is read from the host's own session store.
 - **Clicks use OpenTUI's own event props.** OpenTUI's element primitives
   support `onMouseDown`, and `elementFactory` forwards every prop verbatim via
-  `setProp`, so the Agents header and both `+N more` lines carry an
-  `onMouseDown` prop.
+  `setProp`, so the footer and both `+N more` lines carry an `onMouseDown`
+  prop.
 - **The update toast.** When the snapshot reports a newer version, the panel
   shows one `context.ui.toast` per TUI process.
 
@@ -385,8 +433,7 @@ one request. Nothing about the user or the project is sent — the request asks
 When a newer version is found:
 
 - The sidebar panel (`## The sidebar panel` above) gains a line —
-  `⬆ vX.Y.Z available — run /update install` — directly under the version
-  header.
+  `⬆ vX.Y.Z available — run /update install` — directly above its footer.
 - The TUI shows one toast (`context.ui.toast.show`) per TUI process. The V2
   server plugin context has no toast API, so the toast comes from the panel,
   which reads the same snapshot.
@@ -440,7 +487,7 @@ Set `agents.prefix`.
 
 **More detail.** `SUPERAGENT_DEBUG=1`.
 
-**The Dispatches section stays empty.** If it names a version mismatch
+**The Subagents section stays empty.** If it names a version mismatch
 (`server v… ≠ panel v…`), the snapshot was written by a server still running an
 older copy — `opencode service restart`, and re-dispatch. If it
 says `no snapshot yet`, dispatch something; if it says `none this session`,
@@ -523,6 +570,15 @@ every request body — so what the model receives is checked byte for byte.
 - **The sidebar panel renders and stays live** in the real TUI (driven in
   `tmux`): it showed the version, preset, roster summary and dispatches, and
   updated in place as a second, background dispatch ran and settled.
+- **The activity panel** (driven through a pty, scripted mock model): the plan
+  a subagent wrote (`2/4`, current task), `Main · brainstorming` with a ticking
+  timer, a foreground subagent's live `shell` call, then `thinking`, then `✓`
+  with its duration and `→ Found 1 file: README.md`. The same run confirmed
+  the payloads the panel relies on: `session.created` carries `parentID`; a
+  skill loaded through the `skill` tool emits no `session.skill.activated`;
+  `session.tool.called` has no tool name (it is on
+  `session.tool.input.started` and the `execute.before` hook); and a
+  `subagent` result is wrapped in `<subagent sessionID=… state=…>`.
 
 ### Still unverified
 
@@ -533,7 +589,7 @@ every request body — so what the model receives is checked byte for byte.
   exercised with a scripted mock model.
 - Model routing with real per-slot models (the mock exposes one provider).
 - Whether a mouse click is delivered to the panel's `onMouseDown` props by the
-  live host. The click path is the same signal bump as the poll, which is
+  live host (the footer's roster toggle, the `+N more` lines). The click path is the same signal bump as the poll, which is
   verified; the event delivery is not.
 - Behaviour on Windows, and with the TUI attached to a remote server (the
   panel reads its snapshot from the local config directory).

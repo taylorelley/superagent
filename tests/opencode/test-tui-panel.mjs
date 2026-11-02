@@ -11,8 +11,10 @@ import assert from 'node:assert/strict';
 
 import {
   MAX_AGENT_ROWS,
+  MAX_DETAILED_RUNNING,
   MAX_DISPATCH_ROWS,
   OBJECTIVE_MAX,
+  PANEL_WIDTH,
   renderPanel,
   shortModel,
 } from '../../.opencode/lib/tui-panel.js';
@@ -24,6 +26,7 @@ const THEME = {
   info: 'info',
   success: 'success',
   error: 'error',
+  warning: 'warning',
   border: 'border',
   borderSubtle: 'borderSubtle',
 };
@@ -83,7 +86,8 @@ const textContaining = (node, needle) => {
   return found;
 };
 
-const render = (model) => renderPanel({ theme: THEME, ...model }, factory());
+// A fixed clock: fixtures start at t=1, and a wall-clock `now` would time them in decades.
+const render = (model) => renderPanel({ theme: THEME, now: 60_000, ...model }, factory());
 
 const dispatch = (over = {}) => ({
   agent: 'implementer',
@@ -96,26 +100,35 @@ const dispatch = (over = {}) => ({
   ...over,
 });
 
-// ------------------------------------------------------------------ identity
+// ---------------------------------------------------------------- footer
 
-test('the identity line reports version, preset, and which subsystems are on', () => {
+test('configuration is one footer line: preset, agent count, version', () => {
   const text = lines(
     render({
       version: '0.1.0',
       preset: 'team',
-      subsystems: { agents: true, board: false, council: true },
+      subsystems: { agents: true, board: true },
+      agents: [{ name: 'a' }, { name: 'b' }],
     }),
   );
 
-  assert.ok(text.includes('Superagent'));
-  assert.ok(text.includes('v0.1.0'));
-  assert.ok(
-    text.some(
-      (line) => line.includes('team') && line.includes('agents on') && line.includes('board off'),
-    ),
-    `expected a subsystem summary, got ${JSON.stringify(text)}`,
-  );
-  assert.ok(text.some((line) => line.includes('council on')));
+  assert.ok(text.includes('Superagent v0.1.0'), JSON.stringify(text));
+  assert.ok(text.includes('team · 2 agents'));
+  assert.ok(!text.some((line) => line.includes(' on')), 'subsystems that are on are not news');
+});
+
+test('the footer comes last, after the live sections', () => {
+  const text = lines(render({ preset: 'team', records: [dispatch()] }));
+  const footer = text.findIndex((line) => line.includes('Superagent'));
+  assert.ok(footer > text.findIndex((line) => line === 'Subagents'));
+});
+
+test('a subsystem that is off is named, since it explains missing behaviour', () => {
+  const text = lines(render({ subsystems: { agents: false, board: false, council: true } }));
+  const flags = text.find((line) => line.includes('off'));
+  assert.ok(flags?.includes('agents off'), JSON.stringify(text));
+  assert.ok(flags.includes('board off'));
+  assert.ok(flags.includes('council on'));
 });
 
 test('the council is only mentioned when it is on, since it is off by default', () => {
@@ -125,66 +138,44 @@ test('the council is only mentioned when it is on, since it is off by default', 
 
 test('a panel with nothing to report still renders', () => {
   const text = lines(renderPanel(undefined, factory()));
-  assert.ok(text.includes('Superagent'));
-  assert.ok(text.includes('none registered'));
+  assert.ok(text.some((line) => line.includes('Superagent')));
   assert.ok(text.includes('none this session'));
+});
+
+test('an update is announced above the footer', () => {
+  const text = lines(render({ updateAvailable: true, latestVersion: '0.2.0' }));
+  const notice = text.findIndex((line) => line.includes('v0.2.0 available'));
+  assert.ok(notice >= 0);
+  assert.ok(notice < text.findIndex((line) => line.includes('Superagent')));
 });
 
 // -------------------------------------------------------------------- agents
 
-test('agents are collapsed by default: header count plus routed slots only', () => {
-  const text = lines(
-    render({
-      agents: [
-        { name: 'implementer', model: null },
-        { name: 'oracle', model: 'anthropic/claude-opus-4-1' },
-      ],
-    }),
-  );
+const roster = (n, model = null) =>
+  Array.from({ length: n }, (_, i) => ({ name: `agent-${i}`, model }));
 
-  assert.ok(text.includes('oracle'), 'the routed slot is the exception worth showing');
-  assert.ok(!text.includes('implementer'), 'an inheriting slot is hidden when collapsed');
-  assert.ok(
-    text.some((line) => line.includes('1 collapsed')),
-    'the hidden count is stated',
-  );
+test('the roster is hidden by default: it is configuration, not activity', () => {
+  const text = lines(render({ agents: [{ name: 'oracle', model: 'anthropic/claude-opus-4-1' }] }));
+  assert.ok(!text.includes('  oracle'));
+  assert.ok(!text.some((line) => line.includes('claude-opus')));
 });
 
-test('collapsed mode is capped too: routed slots past the budget count as hidden', () => {
-  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
-    name: `agent-${i}`,
-    model: 'anthropic/claude-opus-4-1',
-  }));
-  const text = lines(render({ agents }));
-
-  assert.equal(
-    text.filter((line) => line.includes('agent-')).length,
-    MAX_AGENT_ROWS,
-    'a fully-routed roster must not outgrow the sidebar just because it is collapsed',
-  );
-  assert.ok(text.some((line) => line.includes('3 collapsed')));
-});
-
-test('expanding via config shows the full roster, capped as before', () => {
-  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
-    name: `agent-${i}`,
-    model: null,
-  }));
-  const text = lines(render({ agents, agentsExpanded: true }));
-
+test('expanding shows the full roster, capped', () => {
+  const text = lines(render({ agents: roster(MAX_AGENT_ROWS + 3), agentsExpanded: true }));
   assert.equal(text.filter((line) => line.includes('agent-')).length, MAX_AGENT_ROWS);
-  assert.ok(text.includes('+3 more'));
+  assert.ok(text.some((line) => line.includes('+3 more')));
 });
 
-test('an empty roster still says none registered, collapsed or not', () => {
-  assert.ok(lines(render({ agents: [] })).some((line) => line.includes('none registered')));
+test('an empty expanded roster says none registered', () => {
+  const text = lines(render({ agents: [], agentsExpanded: true }));
+  assert.ok(text.some((line) => line.includes('none registered')));
 });
 
 test('an unrouted slot says it inherits rather than showing nothing', () => {
   const text = lines(
     render({ agents: [{ name: 'implementer', model: null }], agentsExpanded: true }),
   );
-  assert.ok(text.includes('implementer'));
+  assert.ok(text.some((line) => line.includes('implementer')));
   assert.ok(text.includes('inherit'));
 });
 
@@ -198,86 +189,90 @@ test('routed agents sort first and lose their provider prefix', () => {
       ],
     }),
   );
-
-  assert.ok(text.indexOf('oracle') < text.indexOf('implementer'), 'the routed slot leads');
+  const pos = (needle) => text.findIndex((line) => line.includes(needle));
+  assert.ok(pos('oracle') < pos('implementer'), 'the routed slot leads');
   assert.ok(text.includes('claude-opus-4-1'));
   assert.ok(!text.some((line) => line.includes('anthropic/')));
 });
 
-test('a long roster is capped so the panel cannot outgrow the sidebar', () => {
-  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
-    name: `agent-${i}`,
-    model: null,
-  }));
-  const text = lines(render({ agents, agentsExpanded: true }));
-
-  assert.equal(text.filter((line) => line.includes('agent-')).length, MAX_AGENT_ROWS);
-  assert.ok(text.includes('+3 more'));
-});
-
-test('agents off means no roster, not an empty one', () => {
-  const text = lines(render({ agents: [], subsystems: { agents: false, board: true } }));
-  assert.ok(text.includes('none registered'));
-  assert.ok(text.some((line) => line.includes('agents off')));
-});
-
-// ------------------------------------------------------- agents interaction
-
-test('the Agents header carries the toggle handler as onMouseDown', () => {
+test('the footer carries the roster toggle as onMouseDown', () => {
   const onToggleAgents = () => {};
-  const tree = render({
-    agents: [{ name: 'oracle', model: 'anthropic/claude-opus-4-1' }],
-    onToggleAgents,
-  });
-  const header = boxWithLabel(tree, 'Agents');
-  assert.equal(header?.props?.onMouseDown, onToggleAgents);
-});
-
-test('the "+N collapsed" line carries the same toggle handler as the header', () => {
-  const onToggleAgents = () => {};
-  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
-    name: `agent-${i}`,
-    model: 'anthropic/claude-opus-4-1',
-  }));
-  const overflow = textContaining(render({ agents, onToggleAgents }), 'collapsed');
-  assert.equal(overflow?.props?.onMouseDown, onToggleAgents);
+  const tree = render({ version: '0.1.0', onToggleAgents });
+  const footer = boxWithLabel(tree, 'Superagent v0.1.0');
+  assert.equal(footer?.props?.onMouseDown, onToggleAgents);
 });
 
 test('the expanded "+N more" line carries the reveal-more-agents handler', () => {
   const onRevealMoreAgents = () => {};
-  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
-    name: `agent-${i}`,
-    model: null,
-  }));
   const overflow = textContaining(
-    render({ agents, agentsExpanded: true, onRevealMoreAgents }),
+    render({ agents: roster(MAX_AGENT_ROWS + 3), agentsExpanded: true, onRevealMoreAgents }),
     'more',
   );
   assert.equal(overflow?.props?.onMouseDown, onRevealMoreAgents);
 });
 
 test('a larger agentRowLimit reveals more of the expanded roster', () => {
-  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
-    name: `agent-${i}`,
-    model: null,
-  }));
-  const text = lines(render({ agents, agentsExpanded: true, agentRowLimit: MAX_AGENT_ROWS + 3 }));
-  assert.equal(
-    text.filter((line) => line.includes('agent-')).length,
-    MAX_AGENT_ROWS + 3,
-    'the whole (padded) roster fits under the raised limit',
+  const text = lines(
+    render({
+      agents: roster(MAX_AGENT_ROWS + 3),
+      agentsExpanded: true,
+      agentRowLimit: MAX_AGENT_ROWS + 3,
+    }),
   );
+  assert.equal(text.filter((line) => line.includes('agent-')).length, MAX_AGENT_ROWS + 3);
   assert.ok(!text.some((line) => line.includes('more')), 'nothing left to reveal');
 });
 
-test('omitting agentRowLimit renders exactly as the default cap', () => {
-  const agents = Array.from({ length: MAX_AGENT_ROWS + 3 }, (_, i) => ({
-    name: `agent-${i}`,
-    model: null,
-  }));
-  const text = lines(render({ agents, agentsExpanded: true }));
-  assert.equal(text.filter((line) => line.includes('agent-')).length, MAX_AGENT_ROWS);
-  assert.ok(text.includes('+3 more'));
+// ---------------------------------------------------------------- plan / main
+
+test('the plan section shows the file, progress, and the current task', () => {
+  const text = lines(
+    render({
+      plan: { name: '2026-11-02-panel.md', done: 3, total: 7, current: 'Task 4: Export conflicts' },
+    }),
+  );
+  assert.equal(text[0], 'Plan', 'the plan leads the panel');
+  assert.ok(text.includes('3/7'));
+  assert.ok(text.includes('2026-11-02-panel.md'));
+  assert.ok(text.some((line) => line.startsWith('▸') && line.includes('Task 4')));
+});
+
+test('no plan means no plan section', () => {
+  assert.ok(!lines(render({})).includes('Plan'));
+});
+
+test('the main agent shows its skill, what it is doing, and for how long', () => {
+  const text = lines(
+    render({
+      now: 62_000,
+      main: { state: 'running', skill: 'brainstorming', current: 'read board.js', since: 20_000 },
+    }),
+  );
+  assert.ok(text.includes('Main · brainstorming'));
+  assert.ok(text.some((line) => line.includes('● read board.js')));
+  assert.ok(text.includes('0:42'));
+});
+
+test('an idle main agent says so, without a timer', () => {
+  const text = lines(render({ main: { state: 'idle', skill: null } }));
+  assert.ok(text.includes('Main'));
+  assert.ok(text.includes('idle'));
+});
+
+test('sections run plan, main, subagents, then configuration', () => {
+  const text = lines(
+    render({
+      plan: { name: 'p.md', done: 0, total: 1 },
+      main: { state: 'idle' },
+      records: [dispatch()],
+    }),
+  );
+  const order = ['Plan', 'Main', 'Subagents'].map((label) => text.indexOf(label));
+  assert.deepEqual(
+    [...order].sort((a, b) => a - b),
+    order,
+  );
+  assert.ok(order.every((i) => i >= 0));
 });
 
 // ---------------------------------------------------------------- dispatches
@@ -300,9 +295,9 @@ test('a server/panel version mismatch names both versions', () => {
   assert.ok(text.some((line) => line.includes('6.3.0') && line.includes('0.1.0')));
 });
 
-test('the dispatch header counts what is running against the total', () => {
+test('the subagents header counts what is running against the total', () => {
   const text = lines(render({ records: [dispatch({ state: 'running' }), dispatch(), dispatch()] }));
-  assert.ok(text.includes('2/3') || text.includes('1/3'), JSON.stringify(text));
+  assert.ok(text.includes('Subagents'));
   assert.ok(text.includes('1/3'), 'one of three is running');
 });
 
@@ -323,14 +318,14 @@ test('running dispatches come first, then the most recently finished', () => {
   assert.ok(pos('recent') < pos('old'));
 });
 
-test('a running dispatch shows its objective and what it owns; a finished one does not', () => {
+test('every row names its agent and objective; ownership is shown only while running', () => {
   const text = lines(
     render({
       records: [
         dispatch({
           agent: 'live',
           state: 'running',
-          objective: 'rewrite the parser',
+          objective: 'rewrite parser',
           owns: ['src/parse/**'],
         }),
         dispatch({ agent: 'done', objective: 'earlier work', owns: ['src/other/**'] }),
@@ -338,18 +333,98 @@ test('a running dispatch shows its objective and what it owns; a finished one do
     }),
   );
 
-  assert.ok(text.some((line) => line.includes('rewrite the parser')));
+  assert.ok(text.some((line) => line.includes('live · rewrite parser')));
   assert.ok(text.some((line) => line.includes('owns') && line.includes('src/parse/**')));
-  assert.ok(!text.some((line) => line.includes('earlier work')), 'history stays one line');
-  assert.ok(!text.some((line) => line.includes('src/other/**')));
+  assert.ok(
+    text.some((line) => line.includes('done · earlier work')),
+    'rows are told apart',
+  );
+  assert.ok(!text.some((line) => line.includes('src/other/**')), 'a finished row holds nothing');
+});
+
+test('a running row is timed from its start; a finished one shows its duration', () => {
+  const text = lines(
+    render({
+      now: 200_000,
+      records: [
+        dispatch({ agent: 'live', state: 'running', startedAt: 66_000, endedAt: undefined }),
+        dispatch({ agent: 'done', startedAt: 10_000, endedAt: 75_000 }),
+      ],
+    }),
+  );
+  assert.ok(text.includes('2:14'), JSON.stringify(text));
+  assert.ok(text.includes('1:05'));
+});
+
+test('a finished row shows what came back; a failed one shows why', () => {
+  const tree = render({
+    records: [
+      dispatch({ agent: 'ok', result: 'Found 3 call sites' }),
+      dispatch({ agent: 'bad', state: 'error', result: 'npm test exited 1' }),
+    ],
+  });
+  const text = lines(tree);
+  assert.ok(text.some((line) => line.includes('→ Found 3 call sites')));
+  assert.equal(textContaining(tree, 'npm test exited 1')?.props?.fg, 'error');
+});
+
+test('a running row shows what its subagent is doing, from the host session', () => {
+  const text = lines(
+    render({
+      records: [dispatch({ agent: 'general', state: 'running', childSessionID: 'c1' })],
+      children: [{ id: 'c1', agent: 'general', title: 'x', state: 'running', current: 'glob *' }],
+    }),
+  );
+  assert.ok(text.some((line) => line.trim() === 'glob *'));
+});
+
+test('an unlinked record is matched to its child by agent and title', () => {
+  const text = lines(
+    render({
+      records: [dispatch({ agent: 'general', objective: 'Count files', state: 'running' })],
+      children: [
+        { id: 'c1', agent: 'general', title: 'Count files', state: 'running', current: 'glob *' },
+      ],
+    }),
+  );
+  assert.ok(text.some((line) => line.trim() === 'glob *'));
+  assert.equal(text.filter((line) => line.includes('Count files')).length, 1, 'no duplicate row');
+});
+
+test('a running child with no record still gets a row', () => {
+  const text = lines(
+    render({
+      snapshotState: 'none',
+      children: [{ id: 'c1', agent: 'explore', title: 'Find callers', state: 'running' }],
+    }),
+  );
+  assert.ok(text.some((line) => line.includes('explore · Find callers')));
+  assert.ok(!text.some((line) => line.includes('no snapshot yet')));
+});
+
+test('an ownership conflict is called out, in the warning colour', () => {
+  const tree = render({
+    records: [dispatch({ state: 'running', owns: ['a/**'], conflicts: ['reviewer'] })],
+  });
+  const warning = textContaining(tree, 'overlaps reviewer');
+  assert.ok(warning);
+  assert.equal(warning.props.fg, 'warning');
+});
+
+test('detail lines are drawn for a few running rows only', () => {
+  const records = Array.from({ length: MAX_DETAILED_RUNNING + 2 }, (_, i) =>
+    dispatch({ agent: `agent-${i}`, state: 'running', owns: [`dir${i}/**`] }),
+  );
+  const text = lines(render({ records, dispatchRowLimit: 10 }));
+  assert.equal(text.filter((line) => line.includes('owns')).length, MAX_DETAILED_RUNNING);
 });
 
 test('a background dispatch is marked as one', () => {
   const text = lines(render({ records: [dispatch({ state: 'running', background: true })] }));
-  assert.ok(text.some((line) => line.includes('running') && line.includes('(bg)')));
+  assert.ok(text.some((line) => line.startsWith('bg')));
 });
 
-test('long detail lines are truncated to the column, not wrapped', () => {
+test('long lines are truncated to the column, not wrapped', () => {
   const text = lines(
     render({
       records: [
@@ -358,13 +433,10 @@ test('long detail lines are truncated to the column, not wrapped', () => {
     }),
   );
 
-  const objective = text.find((entry) => entry.includes('xxx'));
-  assert.ok(objective, 'the objective is shown');
-  assert.ok(
-    objective.trim().length <= OBJECTIVE_MAX,
-    `objective line was ${objective.trim().length} characters`,
-  );
-  assert.ok(objective.includes('…'));
+  const row = text.find((entry) => entry.includes('xxx'));
+  assert.ok(row, 'the objective is shown');
+  assert.ok(row.length <= PANEL_WIDTH, `row was ${row.length} characters`);
+  assert.ok(row.includes('…'));
 
   const owns = text.find((entry) => entry.includes('yyy'));
   assert.ok(
@@ -398,7 +470,7 @@ test('a busy session is capped and says how much it is hiding', () => {
   assert.ok(text.includes('+4 more'));
 });
 
-test('the Dispatches "+N more" line carries the reveal-more-dispatches handler', () => {
+test('the Subagents "+N more" line carries the reveal-more-dispatches handler', () => {
   const onRevealMoreDispatches = () => {};
   const records = Array.from({ length: MAX_DISPATCH_ROWS + 4 }, (_, i) =>
     dispatch({ agent: `agent-${i}`, endedAt: i }),
@@ -434,13 +506,13 @@ test('dispatch state is coloured by outcome, so a failure is not just more text'
 
 test('an unknown state still renders, in a neutral colour', () => {
   const tree = render({ records: [dispatch({ state: 'something-new' })] });
-  assert.ok(lines(tree).includes('something-new'));
+  assert.ok(lines(tree).some((line) => line.includes('something-new')));
   assert.ok(colors(tree).every((color) => Object.values(THEME).includes(color)));
 });
 
 test('a record missing state renders "unknown", not the literal word undefined', () => {
   const tree = render({ records: [dispatch({ state: undefined })] });
-  assert.ok(lines(tree).includes('unknown'));
+  assert.ok(lines(tree).some((line) => line.startsWith('unknown')));
   assert.ok(!lines(tree).some((line) => line.includes('undefined')));
 });
 
@@ -450,7 +522,15 @@ test('every colour comes from the theme, so the panel follows it', () => {
   const tree = render({
     version: '1.0.0',
     agents: [{ name: 'oracle', model: 'x/y' }],
-    records: [dispatch({ state: 'running', owns: ['a/**'] }), dispatch()],
+    records: [
+      dispatch({ state: 'running', owns: ['a/**'], conflicts: ['x'] }),
+      dispatch({ result: 'ok' }),
+      dispatch({ state: 'error', result: 'no' }),
+    ],
+    main: { state: 'running', current: 'read a.js', since: 0 },
+    plan: { name: 'p.md', done: 1, total: 2, current: 'Task 2' },
+    updateAvailable: true,
+    agentsExpanded: true,
   });
 
   const themed = new Set(Object.values(THEME));
@@ -461,7 +541,7 @@ test('every colour comes from the theme, so the panel follows it', () => {
 
 test('a theme missing a colour renders rather than crashing', () => {
   const text = lines(renderPanel({ theme: {}, records: [dispatch()] }, factory()));
-  assert.ok(text.includes('Superagent'));
+  assert.ok(text.some((line) => line.includes('Superagent')));
 });
 
 // ---------------------------------------------------------------- shortModel
@@ -475,4 +555,30 @@ test('shortModel keeps the identifying tail of a model id', () => {
   const long = shortModel('provider/' + 'a'.repeat(80), 10);
   assert.equal(long.length, 10);
   assert.ok(long.startsWith('…'));
+});
+
+test('every row fits the sidebar with a gap, however long its parts', () => {
+  const tree = render({
+    version: '0.1.0',
+    preset: 'a-very-long-preset-name',
+    agents: Array.from({ length: 10 }, (_, i) => ({ name: `a${i}` })),
+    now: 4_000_000,
+    main: {
+      state: 'running',
+      skill: 'subagent-driven-development',
+      current: 'x'.repeat(80),
+      since: 0,
+    },
+    records: [
+      dispatch({ state: 'running', background: true, objective: 'y'.repeat(80), startedAt: 0 }),
+    ],
+  });
+  walk(tree, (n) => {
+    if (n.tag !== 'box' || n.props?.flexDirection !== 'row') return;
+    const [left, right] = n.children.map((c) => c.children.join(''));
+    assert.ok(
+      left.length + (right ? right.length + 1 : 0) <= PANEL_WIDTH,
+      `"${left}" + "${right}" overflows ${PANEL_WIDTH}`,
+    );
+  });
 });

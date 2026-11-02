@@ -19,6 +19,7 @@ import assert from 'node:assert/strict';
 
 import entry, {
   createPanelInteractions,
+  createPlanReader,
   dispatchState,
   elementFactory,
   loadRuntime,
@@ -414,4 +415,121 @@ test('a preset persisted while the panel runs is picked up without a restart', a
     if (saved === undefined) delete process.env.OPENCODE_CONFIG_DIR;
     else process.env.OPENCODE_CONFIG_DIR = saved;
   }
+});
+
+// ------------------------------------------------------------ activity wiring
+
+/** A V2-shaped `context.data.session` with one running main session and child. */
+const sessionStore = ({ running = true } = {}) => ({
+  get: (id) =>
+    id === 'ses_child' ? { parentID: 'ses_x', title: 'Count files', agent: 'general' } : null,
+  family: () => ['ses_x', 'ses_child'],
+  status: () => (running ? 'running' : 'idle'),
+  message: {
+    list: (id) =>
+      id === 'ses_child'
+        ? [
+            {
+              type: 'assistant',
+              time: { created: Date.now() },
+              content: [
+                {
+                  type: 'tool',
+                  name: 'glob',
+                  time: { created: Date.now() },
+                  state: { status: 'running', input: { pattern: '*' } },
+                },
+              ],
+            },
+          ]
+        : [
+            {
+              type: 'assistant',
+              time: { created: 1, completed: 2 },
+              content: [
+                {
+                  type: 'tool',
+                  name: 'skill',
+                  time: { created: 1 },
+                  state: { status: 'completed', input: { id: 'brainstorming' } },
+                },
+              ],
+            },
+          ],
+  },
+});
+
+test('the panel shows the main agent and each subagent from the host session store', async () => {
+  const { context, claims } = stubContext();
+  context.data.session = sessionStore();
+  const cleanup = await entry.setup(context, { loadRuntime: async () => reactiveRuntime() });
+  try {
+    const text = textOf(claims[0].render({ sessionID: 'ses_x' }));
+    assert.match(text, /Main · brainstorming/);
+    assert.match(text, /general · Count files/);
+    assert.match(text, /glob \*/);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('while anything runs, the panel repaints every second so timers tick', async () => {
+  const { context, claims } = stubContext();
+  context.data.session = sessionStore();
+  const cleanup = await entry.setup(context, { loadRuntime: async () => reactiveRuntime() });
+  try {
+    const root = claims[0].render({ sessionID: 'ses_x' });
+    const before = root.children[0];
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+    assert.notEqual(root.children[0], before, 'a running session did not repaint');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('with nothing running, an unchanged panel is not repainted', async () => {
+  const { context, claims } = stubContext();
+  context.data.session = sessionStore({ running: false });
+  const cleanup = await entry.setup(context, { loadRuntime: async () => reactiveRuntime() });
+  try {
+    const root = claims[0].render({ sessionID: 'ses_x' });
+    const before = root.children[0];
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+    assert.equal(root.children[0], before);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('the plan reader resolves relative paths and re-reads only when the file moves', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'superagent-plan-'));
+  const rel = 'docs/superagent/plans/p.md';
+  fs.mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true });
+  fs.writeFileSync(path.join(dir, rel), '### Task 1: A\n- [x] one\n- [ ] two\n');
+
+  let reads = 0;
+  let mtime = 1;
+  const readPlan = createPlanReader(dir, {
+    stat: () => mtime,
+    read: (file, enc) => {
+      reads += 1;
+      return fs.readFileSync(file, enc);
+    },
+  });
+
+  assert.deepEqual(readPlan(rel), {
+    name: 'p.md',
+    done: 1,
+    total: 2,
+    current: 'Task 1: A',
+    unit: 'steps',
+  });
+  readPlan(rel);
+  assert.equal(reads, 1, 'an unchanged plan is not re-read');
+  mtime = 2;
+  readPlan(rel);
+  assert.equal(reads, 2);
+
+  assert.equal(readPlan(null), null);
+  assert.equal(createPlanReader(dir)(path.join(dir, 'missing.md')), null);
 });

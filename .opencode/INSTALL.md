@@ -174,7 +174,7 @@ npm install superagent@git+https://github.com/taylorelley/superagent.git --prefi
 ```
 
 The server and TUI parts load from that one entry, so they always run the same
-version. A panel that still shows `server v… ≠ panel v…` in its Dispatches
+version. A panel that still shows `server v… ≠ panel v…` in its Subagents
 section is reading a snapshot written by a server that has not restarted since
 an update — run `opencode service restart`.
 

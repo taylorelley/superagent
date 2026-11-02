@@ -14,10 +14,12 @@ import {
   onDispatch,
   onDispatchResult,
   onSessionEvent,
+  onChildCreated,
   renderBoard,
   injectBoard,
   boardSnapshots,
   backgroundSessionID,
+  unwrapSubagent,
   resetBoards,
   BOARD_MARKER,
 } from '../../.opencode/lib/board.js';
@@ -434,4 +436,97 @@ test('an interrupted or deleted child settles as cancelled', () => {
   onDispatchResult('root', 'c1', launched('child'), s);
   assert.equal(onSessionEvent('session.execution.interrupted', 'child'), true);
   assert.match(renderBoard('root'), /\| cancelled \(bg\) \|/);
+});
+
+// ------------------------------------------------- panel-facing projections
+
+test('the snapshot carries what came back, one line long', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { agent: 'explore', description: 'Find callers', prompt: 'p' }, s);
+  onDispatchResult('root', 'c1', done(`Found 3 call sites ${'x'.repeat(300)}`), s);
+  onDispatch('root', 'c2', { agent: 'implementer', description: 'Break', prompt: 'p' }, s);
+  onDispatchResult('root', 'c2', { status: 'error', error: { message: 'npm test exited 1' } }, s);
+
+  const [ok, bad] = boardSnapshots().root.records;
+  assert.ok(ok.result.startsWith('Found 3 call sites'));
+  assert.ok(ok.result.length <= 121, 'the result is truncated for a one-line slot');
+  assert.equal(bad.result, 'npm test exited 1');
+});
+
+test('the snapshot names who a conflicting dispatch overlapped', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch(
+    'root',
+    'c1',
+    {
+      agent: 'implementer',
+      description: 'API',
+      prompt: '<!-- superagent-ownership: write=src/api/** -->',
+    },
+    s,
+  );
+  onDispatch(
+    'root',
+    'c2',
+    {
+      agent: 'reviewer',
+      description: 'Fix',
+      prompt: '<!-- superagent-ownership: write=src/api/a.ts -->',
+    },
+    s,
+  );
+  const [first, second] = boardSnapshots().root.records;
+  assert.equal(first.conflicts, undefined);
+  assert.deepEqual(second.conflicts, ['implementer']);
+});
+
+test('a foreground child session is linked to its dispatch by agent and title', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { agent: 'general', description: 'Count files', prompt: 'p' }, s);
+  onDispatch('root', 'c2', { agent: 'general', description: 'Other', prompt: 'p' }, s);
+
+  assert.equal(onChildCreated('root', 'ses_child', 'general', 'Count files', s), true);
+  const records = boardSnapshots().root.records;
+  assert.equal(records[0].childSessionID, 'ses_child');
+  assert.equal(records[1].childSessionID, undefined);
+});
+
+test('a linked foreground child settles its record when it finishes', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { agent: 'general', description: 'Count files', prompt: 'p' }, s);
+  onChildCreated('root', 'ses_child', 'general', 'Count files', s);
+  assert.equal(onSessionEvent('session.execution.succeeded', 'ses_child'), true);
+  onDispatchResult('root', 'c1', done('Found 1 file'), s);
+  const [record] = boardSnapshots().root.records;
+  assert.equal(record.state, 'completed');
+  assert.equal(record.result, 'Found 1 file');
+});
+
+test('a child session with no matching dispatch links nothing', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { agent: 'general', description: 'A', prompt: 'p' }, s);
+  onDispatch('root', 'c2', { agent: 'general', description: 'B', prompt: 'p' }, s);
+  assert.equal(onChildCreated('root', 'ses_x', 'general', 'C', s), false, 'ambiguous: no guess');
+  assert.equal(onChildCreated('other', 'ses_x', 'general', 'A', s), false);
+  assert.equal(onChildCreated(undefined, 'ses_x', 'general', 'A', s), false);
+  assert.equal(onChildCreated('root', 'ses_y', 'explore', 'A', s), false, 'wrong agent');
+});
+
+test('a subagent result is shown without the envelope OpenCode wraps it in', () => {
+  const wrapped =
+    '<subagent sessionID="ses_1" state="completed">\nFound 1 file: README.md\n</subagent>';
+  assert.equal(unwrapSubagent(wrapped), 'Found 1 file: README.md');
+  assert.equal(unwrapSubagent('plain text'), 'plain text');
+  assert.equal(unwrapSubagent(undefined), '');
+
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { agent: 'general', description: 'Count', prompt: 'p' }, s);
+  onDispatchResult('root', 'c1', done(wrapped), s);
+  assert.equal(boardSnapshots().root.records[0].result, 'Found 1 file: README.md');
 });

@@ -71,6 +71,18 @@ from upstream's 6.3.0: this is a fork of Superpowers, not a continuation of it.
 
 ### TUI
 
+- **The panel shows activity, not configuration.** It now reads, top to
+  bottom: the plan being executed (`docs/superagent/plans/*.md`, ticked
+  steps out of total, and the current task); the main agent's skill and what
+  it is doing right now, with a timer; and each subagent's agent and
+  objective, its timer or duration, the tool call its child session is making
+  right now, what it owns, any ownership conflict, and what came back. The
+  live parts are read from OpenCode's own session store
+  (`context.data.session`), so they cost nothing and cannot disagree with the
+  main pane. Configuration is one footer line (`Superagent vX` / preset and
+  roster size); clicking it shows the roster. The snapshot format is now v3
+  (adds each dispatch's result, conflicts and child session); restart the
+  server after updating.
 - **Dispatch state at a glance.** The sidebar panel now shows a glyph and
   color per dispatch (running/completed/error/cancelled) instead of a bare
   list.
