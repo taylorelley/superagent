@@ -86,18 +86,17 @@ from upstream's 6.3.0: this is a fork of Superpowers, not a continuation of it.
 - **Dispatch state at a glance.** The sidebar panel now shows a glyph and
   color per dispatch (running/completed/error/cancelled) instead of a bare
   list.
-- **Agents collapse by default.** Only routed slots (an explicit model pin)
-  show in the default view, with a `+N collapsed` count for the rest; the
-  full roster is available by expanding.
+- **The roster is out of the way by default.** It sits behind the panel's
+  footer line; clicking it lists every agent (routed slots first), paged with
+  `+N more`.
 - **Version-skew detection.** The panel now distinguishes "no snapshot yet",
   "snapshot from an incompatible plugin version", and "server/panel version
   mismatch" instead of collapsing all three into an empty dispatch list.
 
 ### Fixes (post-release hardening)
 
-- The collapsed agent view is now capped at the same row budget as the
-  expanded view, so a preset routing more than a handful of agents to
-  explicit models can no longer overflow the sidebar.
+- The roster list is capped at a fixed row budget (with `+N more` to page),
+  so a large roster can no longer overflow the sidebar.
 - A snapshot whose server-side version couldn't be read no longer silently
   passes the version-skew check without a trace.
 - A dispatch record missing `state` renders `unknown` instead of the literal

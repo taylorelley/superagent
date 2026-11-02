@@ -77,6 +77,11 @@ export const onDispatch = (sessionID, callID, args, settings) => {
     ownership,
     startedAt: Date.now(),
     result: null,
+    // A follow-up to an existing subagent names its child session up front,
+    // and no `session.created` fires for a session that already exists.
+    ...(typeof args?.sessionID === 'string' && args.sessionID
+      ? { childSessionID: args.sessionID }
+      : {}),
   };
 
   if (ownership?.write?.length && settings.board.enforceOwnership === 'warn') {
@@ -273,9 +278,9 @@ export const onChildCreated = (parentID, childID, agent, title, settings) => {
   const candidates = [...board.records.values()].filter(
     (r) => r.state === 'running' && !r.childSessionID && (!agent || r.agent === agent),
   );
-  const match =
-    candidates.find((r) => r.objective === objective) ??
-    (candidates.length === 1 ? candidates[0] : null);
+  // Agent and title must both match: a lone running dispatch is not evidence
+  // that an unrelated child session (another plugin's, say) belongs to it.
+  const match = candidates.find((r) => r.objective === objective);
   if (!match) return false;
   match.childSessionID = childID;
   return true;

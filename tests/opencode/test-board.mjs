@@ -530,3 +530,30 @@ test('a subagent result is shown without the envelope OpenCode wraps it in', () 
   onDispatchResult('root', 'c1', done(wrapped), s);
   assert.equal(boardSnapshots().root.records[0].result, 'Found 1 file: README.md');
 });
+
+test('a follow-up dispatch to an existing subagent is linked to that child', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { agent: 'general', description: 'First', prompt: 'p' }, s);
+  onChildCreated('root', 'ses_child', 'general', 'First', s);
+  onDispatchResult('root', 'c1', done('ok'), s);
+  // Resuming names the child; OpenCode sends no session.created for it.
+  onDispatch(
+    'root',
+    'c2',
+    { agent: 'general', description: 'Now test', prompt: 'p', sessionID: 'ses_child' },
+    s,
+  );
+  const [first, second] = boardSnapshots().root.records;
+  assert.equal(first.state, 'completed');
+  assert.equal(second.state, 'running');
+  assert.equal(second.childSessionID, 'ses_child');
+});
+
+test('a lone running dispatch does not claim a child with a different title', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { agent: 'general', description: 'Count files', prompt: 'p' }, s);
+  assert.equal(onChildCreated('root', 'ses_other', 'general', 'Unrelated work', s), false);
+  assert.equal(boardSnapshots().root.records[0].childSessionID, undefined);
+});

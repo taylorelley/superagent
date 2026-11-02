@@ -156,15 +156,21 @@ const orderAgents = (agents) =>
 const joinChildren = (records, children) => {
   const byID = new Map(children.map((child) => [child.id, child]));
   const used = new Set();
+  // Only running records join a child: a finished row needs no live data, and
+  // a child resumed by a follow-up dispatch is still named by the finished
+  // record that first started it — that record must not claim it.
   const rows = records.map((record) => {
+    if (record.state !== 'running') return { ...record };
     let child = record.childSessionID ? byID.get(record.childSessionID) : undefined;
-    if (!child && record.state === 'running') {
+    if (child && used.has(child.id)) child = undefined;
+    if (!child) {
       child = children.find(
         (c) =>
           !used.has(c.id) &&
           c.state === 'running' &&
           c.agent === record.agent &&
-          (c.title ?? '') === (record.objective ?? ''),
+          // The board stores objectives truncated and whitespace-collapsed.
+          truncate(c.title, 80) === (record.objective ?? ''),
       );
     }
     if (child) used.add(child.id);

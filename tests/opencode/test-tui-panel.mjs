@@ -582,3 +582,46 @@ test('every row fits the sidebar with a gap, however long its parts', () => {
     );
   });
 });
+
+test('a resumed child shows its activity on the running follow-up, not the finished first row', () => {
+  const text = lines(
+    render({
+      records: [
+        dispatch({ agent: 'general', objective: 'First', childSessionID: 'c1', endedAt: 50 }),
+        // Not linked (an older server): it can only find the child by title,
+        // which the finished record must not have claimed first.
+        dispatch({
+          agent: 'general',
+          objective: 'First',
+          state: 'running',
+          startedAt: 55,
+          endedAt: undefined,
+        }),
+      ],
+      children: [
+        { id: 'c1', agent: 'general', title: 'First', state: 'running', current: 'shell npm test' },
+      ],
+    }),
+  );
+  const row = text.findIndex((line) => line.includes('● general · First'));
+  assert.ok(row >= 0);
+  assert.equal(text[row + 2].trim(), 'shell npm test', JSON.stringify(text));
+  assert.equal(text.filter((line) => line.includes('shell npm test')).length, 1);
+});
+
+test('the fallback match compares titles the way the board stores objectives', () => {
+  const long = `Count   the files ${'x'.repeat(100)}`;
+  const objective = `Count the files ${'x'.repeat(100)}`.slice(0, 80) + '…';
+  const text = lines(
+    render({
+      records: [dispatch({ agent: 'general', objective, state: 'running', endedAt: undefined })],
+      children: [{ id: 'c1', agent: 'general', title: long, state: 'running', current: 'glob *' }],
+    }),
+  );
+  assert.ok(text.some((line) => line.trim() === 'glob *'));
+  assert.equal(
+    text.filter((line) => line.includes('general · Count')).length,
+    1,
+    'no duplicate row',
+  );
+});
