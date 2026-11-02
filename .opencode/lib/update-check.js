@@ -10,7 +10,7 @@
 import fs from 'fs';
 import path from 'path';
 import { warn, debug } from './log.js';
-import { snapshotDir, writeSnapshot } from './tui-snapshot.js';
+import { snapshotDir, snapshotPath, writeSnapshot } from './tui-snapshot.js';
 
 export const REPO_OWNER = 'taylorelley';
 export const REPO_NAME = 'superagent';
@@ -152,10 +152,12 @@ export const checkForUpdate = async ({
  *
  * Lives here rather than in `tui-snapshot.js` only because that module is
  * imported by this one; it is the one place the board, the snapshot and the
- * update cache meet.
+ * update cache meet. Writes nothing when the panel or the board is off.
  */
-export const publishSnapshot = ({ file, configDir, directory, version, sessions }) => {
-  if (!file) return false;
+export const publishSnapshot = ({ settings, configDir, directory, version, sessions }) => {
+  // Decided per call: a live `/preset --persist` can turn the board on or off.
+  if (settings?.tui?.enabled === false || settings?.board?.enabled === false) return false;
+  const file = snapshotPath(configDir, directory);
   const updateCache = readCache(cachePath(configDir));
   return writeSnapshot(file, {
     directory,

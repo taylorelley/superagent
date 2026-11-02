@@ -25,7 +25,7 @@ import { discoverSkills, registerSkills, watchSkills } from '../lib/skills.js';
 import { renderRoutingTable, renderConflicts } from '../lib/routing.js';
 import { defaultAgentConfigured } from '../lib/opencode-config.js';
 import * as board from '../lib/board.js';
-import { snapshotPath, readVersion } from '../lib/tui-snapshot.js';
+import { readVersion } from '../lib/tui-snapshot.js';
 import { checkForUpdate, cachePath, publishSnapshot } from '../lib/update-check.js';
 import { registerCouncillors, usableMembers } from '../lib/council.js';
 import { commandsToRegister, expandCommand } from '../lib/commands.js';
@@ -57,10 +57,14 @@ const setup = async (ctx) => {
 
   // The sidebar panel runs in the TUI and cannot see the board's in-memory
   // ledger, so each change is projected to a file it watches.
-  const feedsPanel = settings.tui?.enabled !== false && settings.board?.enabled !== false;
-  const snap = { configDir, directory, file: feedsPanel && snapshotPath(configDir, directory) };
   const publishBoard = () =>
-    publishSnapshot({ ...snap, version: readVersion(), sessions: board.boardSnapshots() });
+    publishSnapshot({
+      settings,
+      configDir,
+      directory,
+      version: readVersion(),
+      sessions: board.boardSnapshots(),
+    });
 
   await ctx.skill.transform((editor) =>
     guardSync('skill transform', () => registerSkills(editor, skills)),

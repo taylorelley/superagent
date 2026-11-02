@@ -37,7 +37,8 @@
 
 import fs from 'fs';
 import { resolveConfigDir } from '../lib/paths.js';
-import { loadConfig } from '../lib/config-schema.js';
+import { loadConfig, stateFilePath, CONFIG_BASENAME } from '../lib/config-schema.js';
+import path from 'path';
 import { ROSTER } from '../lib/roster.js';
 import { renderPanel, panelTheme, MAX_AGENT_ROWS, MAX_DISPATCH_ROWS } from '../lib/tui-panel.js';
 import { snapshotPath, readSnapshot, sessionRecords, readVersion } from '../lib/tui-snapshot.js';
@@ -210,7 +211,7 @@ const setup = async (context, deps = {}) => {
   const location = context?.location ?? context?.data?.location?.default?.();
   const directory = location?.directory ?? process.cwd();
   const configDir = resolveConfigDir();
-  const settings = loadConfig({ configDir, projectDir: directory });
+  let settings = loadConfig({ configDir, projectDir: directory });
   if (settings.tui?.enabled === false) {
     debug('tui panel disabled by config');
     return undefined;
@@ -224,11 +225,21 @@ const setup = async (context, deps = {}) => {
   const { h, insert, createSignal } = runtime;
 
   const version = readVersion() ?? context?.app?.version ?? 'dev';
-  const subsystems = {
-    agents: settings.agents?.enabled !== false,
-    board: settings.board?.enabled !== false,
-    council: settings.council?.enabled === true,
-  };
+  const subsystemsOf = (current) => ({
+    agents: current.agents?.enabled !== false,
+    board: current.board?.enabled !== false,
+    council: current.council?.enabled === true,
+  });
+
+  // The files settings come from. A live `/preset --persist` on the server
+  // rewrites the state file, so the panel re-resolves when any of them moves.
+  const settingsFiles = [
+    path.join(configDir, `${CONFIG_BASENAME}.json`),
+    path.join(configDir, `${CONFIG_BASENAME}.jsonc`),
+    stateFilePath(configDir),
+    path.join(directory, '.opencode', `${CONFIG_BASENAME}.json`),
+    path.join(directory, '.opencode', `${CONFIG_BASENAME}.jsonc`),
+  ];
 
   const file = snapshotPath(configDir, directory);
   let stamp = mtimeOf(file);
@@ -265,7 +276,7 @@ const setup = async (context, deps = {}) => {
       {
         version,
         preset: settings.preset,
-        subsystems,
+        subsystems: subsystemsOf(settings),
         agents: panelAgents(settings, agentData?.list?.(location) ?? null),
         records: sessionRecords(snapshot, current),
         snapshotState: dispatchState({ hasFile: stamp > 0, snapshot, panelVersion: version }),
@@ -284,12 +295,21 @@ const setup = async (context, deps = {}) => {
 
   // Only re-parse when the file actually moved: this runs for the life of the
   // TUI, next to a renderer whose whole job is not doing unnecessary work.
+  const settingsStamp = () => settingsFiles.map(mtimeOf).join(':');
+  let configStamp = settingsStamp();
   const poll = () => {
     const mtime = mtimeOf(file);
-    if (mtime === stamp) return;
-    stamp = mtime;
-    snapshot = mtime > 0 ? readSnapshot(file) : null;
-    announceUpdate();
+    const nextConfig = settingsStamp();
+    if (mtime === stamp && nextConfig === configStamp) return;
+    if (nextConfig !== configStamp) {
+      configStamp = nextConfig;
+      settings = loadConfig({ configDir, projectDir: directory });
+    }
+    if (mtime !== stamp) {
+      stamp = mtime;
+      snapshot = mtime > 0 ? readSnapshot(file) : null;
+      announceUpdate();
+    }
     bump();
   };
   const timer = setInterval(poll, POLL_MS);

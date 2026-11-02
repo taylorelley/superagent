@@ -377,6 +377,12 @@ test('defaultAgentConfigured reads default_agent from the OpenCode config layers
   });
 });
 
+test('defaultAgentConfigured honours OPENCODE_CONFIG_CONTENT', () => {
+  const env = { OPENCODE_CONFIG_CONTENT: '{ "default_agent": "build", // inline\n }' };
+  assert.equal(defaultAgentConfigured({ env }), true);
+  assert.equal(defaultAgentConfigured({ env: { OPENCODE_CONFIG_CONTENT: 'not json' } }), false);
+});
+
 test('the solo preset registers nothing', () => {
   resetPromptCache();
   const editor = makeAgentEditor();
@@ -931,7 +937,9 @@ const withPlugin = async (options, fn) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'superagent-plugin-'));
   const saved = process.env.OPENCODE_CONFIG_DIR;
   process.env.OPENCODE_CONFIG_DIR = path.join(dir, 'config');
-  const fake = makeContext({ directory: path.join(dir, 'project'), ...options });
+  const { before, ...contextOptions } = options;
+  before?.(dir);
+  const fake = makeContext({ directory: path.join(dir, 'project'), ...contextOptions });
   const cleanup = await plugin.setup(fake.ctx);
   try {
     await fn(fake, dir);
@@ -1075,5 +1083,41 @@ test('plugin: a subagent dispatch is recorded, and its ownership conflict annota
     };
     await fake.fire('session', 'context', later);
     assert.match(messageText(later.messages.at(-1)), /\| implementer \| c1 \| completed \(bg\)/);
+  });
+});
+
+test('plugin: a live switch from solo turns the board and its snapshot on', async () => {
+  resetPromptCache();
+  const { snapshotPath, readSnapshot } = await import('../../.opencode/lib/tui-snapshot.js');
+  const before = (dir) => {
+    fs.mkdirSync(path.join(dir, 'config'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'config', 'superagent.json'), '{"preset": "solo"}');
+  };
+  await withPlugin({ before }, async (fake, dir) => {
+    const file = snapshotPath(path.join(dir, 'config'), path.join(dir, 'project'));
+    const dispatch = (id) => ({
+      tool: 'subagent',
+      sessionID: 'ses_live_switch',
+      id,
+      input: { agent: 'implementer', description: id, prompt: 'go' },
+    });
+    await fake.fire('tool', 'execute.before', dispatch('c1'));
+    assert.equal(readSnapshot(file), null, 'solo should not feed the panel');
+
+    await fake
+      .commands()
+      .get('preset')
+      .execute({
+        sessionID: 'ses_live_switch',
+        prompt: { text: 'team --persist' },
+        delivery: 'steer',
+      });
+    assert.ok(fake.agents().get('implementer'), 'the roster did not come back');
+
+    await fake.fire('tool', 'execute.before', dispatch('c2'));
+    assert.deepEqual(
+      readSnapshot(file)?.sessions?.ses_live_switch?.records?.map((r) => r.objective),
+      ['c2'],
+    );
   });
 });

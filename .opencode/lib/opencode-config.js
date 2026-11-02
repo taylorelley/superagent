@@ -10,6 +10,7 @@
 
 import path from 'path';
 import { readConfigFile } from './config-schema.js';
+import { stripJsonc } from './fs-utils.js';
 
 /** OpenCode config files, lowest precedence first. */
 export const opencodeConfigFiles = ({ configDir, projectDir, env = process.env } = {}) =>
@@ -21,10 +22,22 @@ export const opencodeConfigFiles = ({ configDir, projectDir, env = process.env }
     projectDir && path.join(projectDir, '.opencode', 'opencode.json'),
   ].filter(Boolean);
 
-const readAll = (options) =>
-  opencodeConfigFiles(options)
-    .map((file) => readConfigFile(file))
-    .filter(Boolean);
+/** Inline config from `OPENCODE_CONFIG_CONTENT`, the highest-precedence layer. */
+const inlineConfig = (env = process.env) => {
+  if (!env.OPENCODE_CONFIG_CONTENT) return null;
+  try {
+    const parsed = JSON.parse(stripJsonc(env.OPENCODE_CONFIG_CONTENT));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const readAll = (options = {}) =>
+  [
+    ...opencodeConfigFiles(options).map((file) => readConfigFile(file)),
+    inlineConfig(options.env),
+  ].filter(Boolean);
 
 /** Whether any layer sets `default_agent`. */
 export const defaultAgentConfigured = (options) =>

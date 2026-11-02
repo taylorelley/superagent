@@ -12,6 +12,9 @@
  */
 
 import test from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 
 import entry, {
@@ -389,4 +392,26 @@ test('the panel is not registered when it is switched off', async () => {
     delete process.env.SUPERAGENT_DISABLE;
   }
   assert.equal(claims.length, 0);
+});
+
+test('a preset persisted while the panel runs is picked up without a restart', async () => {
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'superagent-tui-cfg-'));
+  const saved = process.env.OPENCODE_CONFIG_DIR;
+  process.env.OPENCODE_CONFIG_DIR = configDir;
+  const { context, claims } = stubContext({
+    location: { directory: fs.mkdtempSync(path.join(os.tmpdir(), 'superagent-tui-proj-')) },
+  });
+  const cleanup = await entry.setup(context, { loadRuntime: async () => reactiveRuntime() });
+  try {
+    const root = claims[0].render({ sessionID: 'ses_x' });
+    assert.match(textOf(root), /team/);
+    fs.writeFileSync(path.join(configDir, 'superagent.state.json'), '{"preset": "solo"}');
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+    assert.match(textOf(root), /solo/, 'the panel kept the preset it started with');
+    assert.match(textOf(root), /agents off/);
+  } finally {
+    await cleanup();
+    if (saved === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+    else process.env.OPENCODE_CONFIG_DIR = saved;
+  }
 });
