@@ -31,7 +31,9 @@ run_opencode() {
     local exit_code
 
     set +e
-    command_output=$(cd "$dir" && timeout "${OPENCODE_TEST_TIMEOUT_SECONDS}s" opencode run --print-logs --format json "$prompt" 2>&1)
+    # `opencode run` reads a piped stdin as part of the message, so a test
+    # harness that leaves stdin open would hang until the timeout.
+    command_output=$(cd "$dir" && timeout "${OPENCODE_TEST_TIMEOUT_SECONDS}s" opencode run --print-logs --format json "$prompt" 2>&1 < /dev/null)
     exit_code=$?
     set -e
 
@@ -70,7 +72,7 @@ assert_contains() {
 echo "Test 1: Testing native skill tool with a personal skill..."
 echo "  Running opencode with personal-test request..."
 
-run_opencode output "$TEST_HOME/test-project" "Call the skill tool with name \"personal-test\". Then print the PERSONAL_SKILL_MARKER_12345 marker."
+run_opencode output "$TEST_HOME/test-project" "Call the skill tool with id \"personal-test\". Then print the PERSONAL_SKILL_MARKER_12345 marker."
 assert_contains "$output" '"tool":"skill"' "OpenCode called the native skill tool"
 assert_contains "$output" "PERSONAL_SKILL_MARKER_12345" "native skill tool loaded personal-test skill content"
 
@@ -79,7 +81,7 @@ echo ""
 echo "Test 2: Testing native skill tool with a project skill..."
 echo "  Running opencode with project-test request..."
 
-run_opencode output "$TEST_HOME/test-project" "Call the skill tool with name \"project-test\". Then print the PROJECT_SKILL_MARKER_67890 marker."
+run_opencode output "$TEST_HOME/test-project" "Call the skill tool with id \"project-test\". Then print the PROJECT_SKILL_MARKER_67890 marker."
 assert_contains "$output" "PROJECT_SKILL_MARKER_67890" "native skill tool loaded project-test skill content"
 
 # Test 3: Test bundled superagent skill loading
@@ -87,8 +89,8 @@ echo ""
 echo "Test 3: Testing native skill tool with a superagent skill..."
 echo "  Running opencode with brainstorming skill..."
 
-run_opencode output "$TEST_HOME/test-project" "Call the skill tool with name \"brainstorming\". Then tell me the loaded skill title."
-assert_contains "$output" '"name":"brainstorming"' "native skill tool loaded bundled brainstorming skill"
+run_opencode output "$TEST_HOME/test-project" "Call the skill tool with id \"brainstorming\". Then tell me the loaded skill title."
+assert_contains "$output" 'skill_content name=\"brainstorming\"' "native skill tool loaded bundled brainstorming skill"
 assert_contains "$output" "Brainstorming Ideas Into Designs" "brainstorming skill content was returned"
 
 echo ""

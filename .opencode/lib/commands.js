@@ -1,10 +1,12 @@
 /**
  * Slash commands.
  *
- * Registered by mutating `config.command`, then intercepted in
- * `command.execute.before` where the arguments are known and the expansion can
- * depend on live state. A command whose expansion is static is just a template
- * and needs no interception.
+ * OpenCode V2 registers a command as a name plus an `execute` function, which
+ * receives the session and the prompt the user typed after the command. The
+ * plugin entry wires `execute` to `expandCommand` below and submits the
+ * expansion as the session's next prompt, so the expansion can depend on live
+ * state the command definition cannot see: the councillors that were actually
+ * registered, the live board, the resolved preset.
  */
 
 import fs from 'fs';
@@ -19,19 +21,15 @@ import { warn } from './log.js';
 export const COMMANDS = {
   council: {
     description: 'Ask several models the same question and synthesize the answers',
-    template: 'Convene the council.',
   },
   preset: {
     description: 'Show or switch the Superagent preset',
-    template: 'Show the Superagent preset.',
   },
   board: {
     description: 'Show the Superagent job board for this session',
-    template: 'Show the job board.',
   },
   update: {
     description: 'Check for, or install, a Superagent update',
-    template: 'Show the Superagent update status.',
   },
 };
 
@@ -50,28 +48,40 @@ const COMMAND_ENABLED = {
   update: () => true,
 };
 
-export const registerCommands = (config, settings, { conflicts } = {}) => {
-  config.command = config.command || {};
+/**
+ * Which commands to register.
+ *
+ * `existing` is the set of command names OpenCode already has — the V2
+ * command editor can only add, and a later registration would shadow the
+ * user's own command of the same name, so collisions are filtered here, before
+ * the transform, from `ctx.command.list()`.
+ *
+ * Returns `{ commands, conflicts }`; `commands` is `[{ name, description }]`.
+ */
+export const commandsToRegister = (settings, existing = new Set()) => {
+  const commands = [];
+  const conflicts = [];
   for (const [name, spec] of Object.entries(COMMANDS)) {
     if (!COMMAND_ENABLED[name](settings)) continue;
-    if (Object.prototype.hasOwnProperty.call(config.command, name)) {
-      warn(`a command named "/${name}" already exists; leaving it alone`);
-      conflicts?.push({ kind: 'command', name });
+    if (existing.has(name)) {
+      conflicts.push({ kind: 'command', name });
       continue;
     }
-    config.command[name] = { ...spec };
+    commands.push({ name, ...spec });
   }
+  return { commands, conflicts };
 };
 
 /**
  * Explain what a preset switch can and cannot do.
  *
- * Being straight about this matters. Agents are resolved into cached state at
- * startup, so switching a preset that routes a model slot differently does
- * nothing until OpenCode restarts. Reporting "switched" without saying so would
- * leave the user believing they are on a model they are not on.
+ * Being straight about this matters. A persisted preset is applied by
+ * reloading the plugin's agent and command registrations (`onPersist`), which
+ * changes what *new* dispatches get — but a session keeps the agent and model
+ * it already selected. Reporting "switched" without saying so would leave the
+ * user believing they are on a model they are not on.
  */
-const presetReport = (settings, args, configDir) => {
+const presetReport = (settings, args, configDir, onPersist) => {
   const known = { ...SHIPPED_PRESETS, ...(settings.presets ?? {}) };
   const [name, ...flags] = args.trim().split(/\s+/).filter(Boolean);
 
@@ -116,15 +126,33 @@ const presetReport = (settings, args, configDir) => {
     }
   }
 
+  if (!persisted) {
+    return [
+      `Preset "${name}" was not saved, so nothing changed.`,
+      '',
+      'Superagent reads its preset from `superagent.json` and the saved state file.',
+      `Re-run as \`/preset ${name} --persist\` to save and apply it, or set "preset": "${name}" in superagent.json.`,
+      '',
+      'Tell your human partner exactly this and stop. Do not take any other action.',
+    ].join('\n');
+  }
+
+  let applied = false;
+  if (onPersist) {
+    try {
+      onPersist(name);
+      applied = true;
+    } catch (err) {
+      warn(`could not apply preset: ${err.message}`);
+    }
+  }
+
   return [
-    `Preset "${name}" ${persisted ? 'saved' : 'selected'}.`,
+    `Preset "${name}" saved.`,
     '',
-    '**This does not take effect until OpenCode restarts.** Agent definitions —',
-    'which agents exist, and which model each one is routed to — are resolved',
-    'once at startup and cached. Nothing about the running session changes.',
-    persisted
-      ? 'The choice is saved, so it will apply next time you start OpenCode.'
-      : `Re-run as \`/preset ${name} --persist\` to save the choice, or set "preset": "${name}" in superagent.json.`,
+    applied
+      ? 'Superagent reloaded its agents and commands with it. **This session keeps the agent and model it already selected**; new dispatches and new sessions use the new definitions.'
+      : '**It takes effect after `opencode service restart`.** Agent definitions — which agents exist, and which model each one is routed to — are registered when the plugin loads.',
     '',
     'Tell your human partner exactly this and stop. Do not take any other action.',
   ].join('\n');
@@ -135,9 +163,8 @@ const presetReport = (settings, args, configDir) => {
  *
  * `/update` reads what the last background check found — it never triggers a
  * fetch of its own, so the command is instant. `/update install` shells out
- * (`update-install.js`) and is honest, like `/preset --persist`, that the
- * change is not live until OpenCode restarts: plugin code is resolved once at
- * startup, the same as agents and presets.
+ * (`update-install.js`) and is honest that the change is not live until the
+ * OpenCode service restarts: plugin code is imported once when it loads.
  */
 const updateReport = (args, configDir) => {
   const [action] = args.trim().split(/\s+/).filter(Boolean);
@@ -149,8 +176,8 @@ const updateReport = (args, configDir) => {
         ? `Update installed (${result.method}).`
         : `Update failed (${result.method}): ${result.error}`,
       '',
-      '**This does not take effect until OpenCode restarts.** Plugin code is resolved once',
-      'at startup and cached, the same as agent definitions and presets.',
+      '**This does not take effect until the OpenCode service restarts** (`opencode service restart`).',
+      'Plugin code is imported once, when the plugin loads.',
       '',
       'Tell your human partner exactly this and stop. Do not take any other action.',
     ].join('\n');
@@ -182,13 +209,17 @@ const updateReport = (args, configDir) => {
  *
  * Returns the replacement text, or null to leave the command alone.
  */
-export const expandCommand = (command, args, { settings, councillors, configDir, sessionID }) => {
+export const expandCommand = (
+  command,
+  args,
+  { settings, councillors, configDir, sessionID, onPresetPersist },
+) => {
   if (command === 'council') {
     return councilInstruction(councillors ?? [], (args ?? '').trim());
   }
 
   if (command === 'preset') {
-    return presetReport(settings, args ?? '', configDir);
+    return presetReport(settings, args ?? '', configDir, onPresetPersist);
   }
 
   if (command === 'board') {

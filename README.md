@@ -29,7 +29,9 @@ There's a bunch more to it, but that's the core of the system. And because the s
 
 ## Installation
 
-Superagent is a plugin for [OpenCode](https://opencode.ai).
+Superagent is a plugin for [OpenCode](https://opencode.ai) 2 (it uses the
+[OpenCode 2 plugin format](https://opencode.ai/v2/docs/plugins/) and does not
+load in OpenCode 1).
 
 - Tell OpenCode:
 
@@ -37,19 +39,24 @@ Superagent is a plugin for [OpenCode](https://opencode.ai).
   Fetch and follow instructions from https://raw.githubusercontent.com/taylorelley/superagent/refs/heads/main/.opencode/INSTALL.md
   ```
 
-- Or add it to the `plugin` array in your `opencode.json` (global or
-  project-level) and restart OpenCode:
+- Or install it with OpenCode's plugin manager:
+
+  ```bash
+  opencode plugin add github:taylorelley/superagent
+  ```
+
+  which is the same as adding it to the `plugins` array in your
+  `opencode.json` (global or project-level):
 
   ```json
   {
-    "plugin": ["superagent@git+https://github.com/taylorelley/superagent.git"]
+    "plugins": ["github:taylorelley/superagent"]
   }
   ```
 
 - Verify by asking: "What can Superagent do?"
-- For the TUI sidebar panel — version, preset, roster, and the live job board —
-  add the same entry to `tui.json`, which is where OpenCode's TUI reads its own
-  plugin list. See [.opencode/INSTALL.md](.opencode/INSTALL.md).
+- The one entry also loads the TUI sidebar panel — version, preset, roster, and
+  the live job board. There is no separate `tui.json` entry in OpenCode 2.
 - Install and troubleshooting details: [.opencode/INSTALL.md](.opencode/INSTALL.md)
 - Full guide: [docs/README.opencode.md](docs/README.opencode.md)
 - Superagent also registers a roster of specialist agents on OpenCode — see
@@ -104,8 +111,8 @@ source and tested against a live install, not inferred from docs.
 specialist agents — orchestrator, implementer, implementer-deep,
 task-reviewer, re-reviewer, code-reviewer, spec-reviewer, plan-reviewer,
 oracle, librarian — each independently routable to its own model. This
-matters because OpenCode's `task` tool has no per-call model parameter, so
-per-role routing is otherwise impossible. In practice, it means you can run
+matters because OpenCode's `subagent` tool is told never to pick a model
+itself, so per-role routing otherwise depends on the model guessing model IDs. In practice, it means you can run
 cheap, fast models for grunt work (research, routine implementation) and
 reserve stronger models for judgment calls (architecture, deep review),
 instead of paying premium-model rates for every step.
@@ -140,10 +147,10 @@ project throughout — package name, plugin entry point, env vars, skill
 paths — and, while doing so, removed the brainstorming skill's telemetry
 beacon that used to fetch a version-tagged image from `primeradiant.com` on
 every session. The fork no longer phones home by default. The one outbound
-request that remains is an update check: once per session, Superagent asks
+request that remains is an update check: once per server start, Superagent asks
 GitHub "is there a newer Superagent" — nothing about the user or the project
-is sent — and shows a note in the OpenCode sidebar (and, best-effort, a TUI
-popup) when one exists. `/update install` installs it from inside OpenCode.
+is sent — and shows a note in the OpenCode sidebar (and a TUI toast) when one
+exists. `/update install` installs it from inside OpenCode.
 Turn it off with `{"updateCheck": {"enabled": false}}`; see
 [docs/superagent.md](docs/superagent.md#updates).
 
@@ -204,10 +211,13 @@ See `skills/writing-skills/SKILL.md` for the complete guide.
 
 ## Updating
 
-OpenCode installs Superagent through a git-backed package spec, so restarting
-OpenCode usually picks up new commits. Some OpenCode and Bun versions pin the
-resolved git dependency — see
-[.opencode/INSTALL.md](.opencode/INSTALL.md#updating) if updates don't appear.
+```bash
+opencode plugin update github:taylorelley/superagent
+opencode service restart
+```
+
+or `/update install` from inside a session. See
+[.opencode/INSTALL.md](.opencode/INSTALL.md#updating).
 
 ## License
 

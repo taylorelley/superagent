@@ -8,7 +8,7 @@
  * three chances to drift. Those documents now carry generated regions rendered
  * from this file, checked by `tests/opencode/test-tool-map-single-source.sh`.
  *
- * Verified against the installed OpenCode CLI's tool inventory.
+ * Verified against the OpenCode V2 tool inventory (opencode 2.2.5).
  */
 
 /**
@@ -17,18 +17,19 @@
  */
 export const TOOL_MAPPINGS = [
   { action: 'Create or update todos', tool: '`todowrite`' },
-  { action: '`Subagent (general-purpose):`', tool: '`task` with `subagent_type: "general"`' },
+  { action: '`Subagent (general-purpose):`', tool: '`subagent` with `agent: "general"`' },
   { action: 'Invoke a skill', tool: "OpenCode's native `skill` tool" },
   { action: 'Read files', tool: '`read`' },
-  { action: 'Create, edit, or delete files', tool: '`apply_patch`' },
-  { action: 'Run shell commands', tool: '`bash`' },
+  { action: 'Create, edit, or delete files', tool: '`edit`, `write` (or `patch` where offered)' },
+  { action: 'Run shell commands', tool: '`shell`' },
   { action: 'Search files', tool: '`grep`, `glob`' },
   { action: 'Fetch a URL', tool: '`webfetch`' },
 ];
 
 /** Qualifications that do not fit the two-column shape. */
 export const TOOL_MAP_NOTES = [
-  'For read-only codebase exploration, prefer `subagent_type: "explore"`.',
+  'For read-only codebase exploration, prefer `agent: "explore"`.',
+  'To continue a subagent, call `subagent` again with the `sessionID` it returned.',
   "Use OpenCode's native `skill` tool to list and load skills.",
 ];
 

@@ -1,24 +1,29 @@
 /**
- * Build `config.agent` entries from the roster.
+ * Register the roster through OpenCode V2's agent transform.
  *
- * Three behaviours here exist because of how OpenCode assembles agents, all
- * verified in docs/superagent.md:
+ * Three behaviours here exist because of how OpenCode assembles agents:
  *
- * - **Never overwrite an existing key.** By the time the plugin's config hook
- *   runs, `config.agent` already holds whatever the user wrote. Assigning to a
- *   key would silently replace their agent with ours. The roster names are
+ * - **Never overwrite an existing agent.** By the time this transform runs,
+ *   the editor already holds the built-ins and whatever the user wrote in
+ *   `opencode.json` or `.opencode/agents/*.md`. `editor.update` on a taken ID
+ *   would silently merge our definition into theirs. The roster names are
  *   unprefixed and generic on purpose — they are meant to be typed — so a
  *   collision is plausible, and the user's definition wins.
  *
- * - **Omit `model` rather than compute a fallback.** Agent assembly does
- *   `if (value.model) ...`, and a subagent with no model pinned inherits the
- *   parent's. So an unrouted slot is expressed by leaving the key off, and an
- *   unavailable model is expressed by deleting it — never by substituting some
- *   other model the user did not ask for.
+ * - **Omit `model` rather than compute a fallback.** A subagent with no model
+ *   inherits the parent session's. So an unrouted slot is expressed by leaving
+ *   the key off, and an unavailable model is expressed by not setting it —
+ *   never by substituting some other model the user did not ask for.
  *
- * - **Only set `default_agent` if the orchestrator was actually registered.**
- *   OpenCode throws at startup when `default_agent` names an agent that does
- *   not exist, so a skipped registration must not leave the setting behind.
+ * - **Only select a default agent if the orchestrator was registered, and the
+ *   user has not chosen one.** The editor exposes no getter for the current
+ *   default, so the caller reads `default_agent` from the user's OpenCode
+ *   config (see `opencode-config.js`) and passes it in.
+ *
+ * Everything here runs inside a transform, which OpenCode replays from
+ * scratch whenever the agent registry is rebuilt. So it is synchronous, does
+ * no I/O (prompts are read at setup and cached), and reports what it did
+ * through its return value instead of through side effects.
  */
 
 import fs from 'fs';
@@ -26,14 +31,15 @@ import path from 'path';
 import { ROSTER } from './roster.js';
 import { opencodeDir, packageRoot } from './paths.js';
 import { extractDispatchTemplateFile, composeAgentPrompt } from './prompt-compose.js';
+import { mergeRules } from './permissions.js';
 import { warn, debug } from './log.js';
 
-/** Prompts are read once at config time; the transform path must stay I/O free. */
+/** Prompts are read once at setup; the transform path must stay I/O free. */
 const promptCache = new Map();
 
 export const resetPromptCache = () => promptCache.clear();
 
-const loadPrompt = (spec) => {
+export const loadPrompt = (spec) => {
   const cacheKey = `${spec.kind}:${spec.path}:${spec.extra ?? ''}`;
   if (promptCache.has(cacheKey)) return promptCache.get(cacheKey);
 
@@ -59,6 +65,37 @@ const loadPrompt = (spec) => {
   return prompt;
 };
 
+/** Warm the prompt cache for every roster entry, so the transform never reads a file. */
+export const preloadPrompts = (roster = ROSTER) => {
+  for (const entry of roster) loadPrompt(entry.prompt);
+};
+
+/**
+ * Parse `provider/model[#variant]` into a V2 model reference.
+ *
+ * Returns undefined for anything that is not that shape, so a typo in
+ * `superagent.json` degrades to "inherit the session model" with a warning
+ * instead of an agent OpenCode refuses to load.
+ */
+export const parseModelRef = (value) => {
+  if (value && typeof value === 'object' && value.providerID && (value.id || value.model)) {
+    return {
+      providerID: value.providerID,
+      id: value.id ?? value.model,
+      ...(value.variant ? { variant: value.variant } : {}),
+    };
+  }
+  if (typeof value !== 'string') return undefined;
+  const [ref, variant] = value.split('#');
+  const slash = ref.indexOf('/');
+  if (slash <= 0 || slash === ref.length - 1) return undefined;
+  return {
+    providerID: ref.slice(0, slash),
+    id: ref.slice(slash + 1),
+    ...(variant ? { variant } : {}),
+  };
+};
+
 /**
  * Decide the model for a slot.
  *
@@ -67,30 +104,56 @@ const loadPrompt = (spec) => {
 const resolveModel = (slot, models, availableModels) => {
   const configured = models?.[slot];
   if (!configured) return undefined;
-  if (availableModels && availableModels.size && !availableModels.has(configured)) {
+  const ref = parseModelRef(configured);
+  if (!ref) {
+    warn(
+      `model "${configured}" for slot "${slot}" is not in provider/model form; ` +
+        'the agent will inherit the session model instead',
+    );
+    return undefined;
+  }
+  const key = `${ref.providerID}/${ref.id}`;
+  if (availableModels && availableModels.size && !availableModels.has(key)) {
     warn(
       `model "${configured}" for slot "${slot}" is not available from any configured provider; ` +
         'the agent will inherit the session model instead',
     );
     return undefined;
   }
-  return configured;
+  return ref;
+};
+
+/** Write one agent definition onto a fresh editor entry. */
+export const defineAgent = (editor, name, { description, mode, system, permissions, model }) => {
+  editor.update(name, (agent) => {
+    agent.description = description;
+    agent.mode = mode;
+    agent.system = system;
+    // Appended after OpenCode's defaults (allow everything, ask for `.env`),
+    // so these narrow them under last-match.
+    agent.permissions.push(...permissions);
+    if (model) agent.model = model;
+  });
 };
 
 /**
- * Register the roster onto a live OpenCode config.
+ * Register the roster onto an agent editor.
  *
- * Mutates `config` and returns the agents that were actually registered, which
- * is what the routing table is rendered from.
+ * Returns `{ registered, conflicts, temperatures }`: the agents actually
+ * registered (what the routing table is rendered from), the names skipped
+ * because they were taken, and the per-agent temperature the session hook
+ * applies — V2 agents have no temperature field of their own.
  */
-export const registerAgents = (config, settings, { availableModels, conflicts } = {}) => {
-  if (!config || settings?.agents?.enabled === false) return [];
+export const registerAgents = (
+  editor,
+  settings,
+  { availableModels, defaultAgentConfigured = false } = {},
+) => {
+  const result = { registered: [], conflicts: [], temperatures: {} };
+  if (!editor || settings?.agents?.enabled === false) return result;
 
   const { prefix = '', disable = [], models, temperature, permissionOverrides } = settings.agents;
-
-  config.agent = config.agent || {};
-  const registered = [];
-  let orchestratorRegistered = false;
+  let orchestrator = null;
 
   for (const entry of ROSTER) {
     if (disable.includes(entry.key)) {
@@ -100,42 +163,53 @@ export const registerAgents = (config, settings, { availableModels, conflicts } 
 
     const name = `${prefix}${entry.key}`;
 
-    if (Object.prototype.hasOwnProperty.call(config.agent, name)) {
-      warn(
-        `an agent named "${name}" already exists; leaving it alone. ` +
-          'Set agents.prefix in superagent.json to register the Superagent roster alongside it.',
-      );
-      conflicts?.push({ kind: 'agent', name });
+    if (editor.get(name) !== undefined) {
+      result.conflicts.push({ kind: 'agent', name });
       continue;
     }
 
     const prompt = loadPrompt(entry.prompt);
     if (!prompt) continue;
 
-    const model = resolveModel(entry.slot, models, availableModels);
-    const temp = temperature?.[entry.slot];
-
-    config.agent[name] = {
+    defineAgent(editor, name, {
       description: entry.description,
       mode: entry.mode,
-      prompt,
-      permission: { ...entry.permission, ...(permissionOverrides?.[entry.key] ?? {}) },
-      ...(model ? { model } : {}),
-      ...(typeof temp === 'number' ? { temperature: temp } : {}),
-    };
+      system: prompt,
+      permissions: mergeRules(entry.permission, permissionOverrides?.[entry.key]),
+      model: resolveModel(entry.slot, models, availableModels),
+    });
 
-    registered.push({ ...entry, name });
-    if (entry.orchestrator) orchestratorRegistered = true;
+    const temp = temperature?.[entry.slot];
+    if (typeof temp === 'number') result.temperatures[name] = temp;
+
+    result.registered.push({ ...entry, name });
+    if (entry.orchestrator) orchestrator = name;
   }
 
-  // Only now is it safe: OpenCode throws at startup if default_agent names an
-  // agent that does not exist, is a subagent, or is hidden.
-  if (orchestratorRegistered && settings.agents.setDefaultAgent && !config.default_agent) {
-    const orchestrator = registered.find((entry) => entry.orchestrator);
-    config.default_agent = orchestrator.name;
-    debug(`set default_agent to ${orchestrator.name}`);
+  // OpenCode falls back to `build` when the default names something that does
+  // not exist, but selecting an agent we did not register would still be a
+  // lie about what the session is running.
+  if (orchestrator && settings.agents.setDefaultAgent && !defaultAgentConfigured) {
+    editor.default(orchestrator);
+    debug(`set default agent to ${orchestrator}`);
   }
 
-  debug(`registered ${registered.length} agents`);
-  return registered;
+  debug(`registered ${result.registered.length} agents`);
+  return result;
+};
+
+/** Log each conflict once per process, not once per transform replay. */
+const warned = new Set();
+export const warnConflicts = (conflicts) => {
+  for (const conflict of conflicts) {
+    const key = `${conflict.kind}:${conflict.name}`;
+    if (warned.has(key)) continue;
+    warned.add(key);
+    warn(
+      conflict.kind === 'command'
+        ? `a command named "/${conflict.name}" already exists; leaving it alone`
+        : `an agent named "${conflict.name}" already exists; leaving it alone. ` +
+            'Set agents.prefix in superagent.json to register the Superagent roster alongside it.',
+    );
+  }
 };

@@ -2,7 +2,7 @@
  * The Superagent roster, as data.
  *
  * Each entry names where its prompt comes from, what it may do, and which
- * model slot routes it. `agents.js` turns this into `config.agent` entries and
+ * model slot routes it. `agents.js` turns this into V2 agent definitions and
  * `routing.js` renders it into the orchestrator's routing table, so the two can
  * never disagree about which agents exist.
  *
@@ -11,22 +11,24 @@
  * `prompt-compose.js`. Only roles Superagent has no existing prompt for get a
  * new file under `.opencode/prompts/`.
  *
- * On permissions: a key is a tool-name pattern, and denying one with pattern
- * `*` removes the tool from the agent entirely rather than prompting for it
- * (see docs/superagent.md). `task: "deny"` on the workers is what makes
- * "you do not dispatch subagents" structural instead of a request the prompt
- * has to keep making.
+ * On permissions: a key is a V2 permission action and the value is an effect,
+ * or a `{ resource pattern: effect }` map. `permissions.js` lowers this to
+ * OpenCode V2's ordered rule list. Denying an action with resource `*`
+ * removes the tool from the agent entirely rather than prompting for it (see
+ * docs/superagent.md). `subagent: "deny"` on the workers is what makes "you
+ * do not dispatch subagents" structural instead of a request the prompt has
+ * to keep making.
  *
  * Three roles from oh-my-opencode-slim are deliberately absent. Designer:
  * Superagent has no UI/UX methodology, and inventing one here would be the
  * competing-prompt problem this layer exists to avoid. Fixer: it is the
- * implementer resumed through `task_id`, which subagent-driven-development
+ * implementer resumed through the `subagent` tool's `sessionID`, which subagent-driven-development
  * already specifies. Explorer: OpenCode ships a read-only `explore` subagent,
  * so the routing table points at that rather than registering a duplicate.
  */
 
 /** Read-only: no edits, no dispatching, but may run commands to inspect. */
-const READ_ONLY = { edit: 'deny', task: 'deny' };
+const READ_ONLY = { edit: 'deny', subagent: 'deny' };
 
 export const ROSTER = [
   {
@@ -51,7 +53,7 @@ export const ROSTER = [
     description: 'Implements one scoped task from a plan, with tests, and reports back.',
     routing: 'implementing one scoped task from a plan',
     prompt: { kind: 'template', path: 'skills/subagent-driven-development/implementer-prompt.md' },
-    permission: { task: 'deny' },
+    permission: { subagent: 'deny' },
   },
   {
     key: 'implementer-deep',
@@ -68,7 +70,7 @@ export const ROSTER = [
         'Do not repeat the previous approach. Establish why the earlier fix failed before writing code, ' +
         'and say so explicitly in your report.',
     },
-    permission: { task: 'deny' },
+    permission: { subagent: 'deny' },
   },
   {
     key: 'task-reviewer',
@@ -135,7 +137,7 @@ export const ROSTER = [
     description: 'Researches external documentation and APIs. Returns findings with sources.',
     routing: 'external documentation, API behaviour, library research',
     prompt: { kind: 'file', path: 'prompts/librarian.md' },
-    permission: { edit: 'deny', task: 'deny', webfetch: 'allow' },
+    permission: { edit: 'deny', subagent: 'deny', webfetch: 'allow' },
   },
 ];
 

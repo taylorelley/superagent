@@ -2,14 +2,18 @@
 
 ## Prerequisites
 
-- [OpenCode.ai](https://opencode.ai) installed
+- [OpenCode](https://opencode.ai) **2** installed
+  (`curl -fsSL https://opencode.ai/v2/install | bash`). Superagent is an
+  OpenCode 2 plugin ([plugin format](https://opencode.ai/v2/docs/plugins/));
+  it does not load in OpenCode 1.
 
 ## Installation
 
 ### Before you install: check for name conflicts
 
 Superagent registers a roster of agents and a few slash commands
-(`/council`, `/preset`, `/board`) into `opencode.json`. At runtime it never
+(`/council`, `/preset`, `/board`, `/update`) through OpenCode's plugin API. It
+never edits your `opencode.json`, and at runtime it never
 overwrites a name you already have — a collision is skipped with a warning
 and your definition wins (see
 [docs/superagent.md](https://github.com/taylorelley/superagent/blob/main/docs/superagent.md#names)) —
@@ -20,9 +24,12 @@ If you are an agent performing this install on a human's behalf, do this
 check first and report the result before editing `opencode.json`:
 
 1. Read the human's existing OpenCode config — global
-   `~/.config/opencode/opencode.json` and any project-level
-   `.opencode/opencode.json` or `opencode.json` — and note the keys already
-   present under `agent` and `command`.
+   `~/.config/opencode/opencode.json(c)` and any project-level
+   `.opencode/opencode.json(c)` or `opencode.json(c)` — and note the keys
+   already present under `agents` and `commands` (`agent` and `command` in a
+   config still written for OpenCode 1), plus any files under
+   `.opencode/agents/` and `.opencode/commands/`. Or, with OpenCode running,
+   `opencode debug agents` lists every agent by ID.
 2. Read the roster and command names Superagent will try to register,
    straight from source so this never drifts out of date with what actually
    ships: agent `key`s in
@@ -43,34 +50,46 @@ check first and report the result before editing `opencode.json`:
 
 ### Add the plugin
 
-Add superagent to the `plugin` array in your `opencode.json` (global or project-level):
+```bash
+opencode plugin add github:taylorelley/superagent
+```
+
+That installs the package into OpenCode's plugin cache and adds it to the
+`plugins` array of your global `opencode.json(c)`. Or add it by hand, globally
+or per project:
 
 ```json
 {
-  "plugin": ["superagent@git+https://github.com/taylorelley/superagent.git"]
+  "plugins": ["github:taylorelley/superagent"]
 }
 ```
 
-Restart OpenCode. The plugin installs through OpenCode's plugin manager and
-registers all skills.
+Config changes reload automatically; if they do not, run
+`opencode service restart`. Verify with `opencode plugin list`, or by asking:
+"What can Superagent do?"
 
-Verify by asking: "What can Superagent do?"
+### The sidebar panel
 
-### Add the sidebar panel (optional)
+The same entry also loads Superagent's TUI part: a panel in the session
+sidebar with its version, the active preset, the registered roster, and the
+live job board. OpenCode 2 loads the TUI parts of the plugins its server loads,
+so there is nothing else to configure (and no `tui.json` entry — delete one
+left over from OpenCode 1). Turn it off with `{"tui": {"enabled": false}}` in
+`superagent.json`.
 
-Superagent can also render a panel into the TUI sidebar — its version, the
-active preset, the registered roster, and the live job board. The TUI reads its
-plugin list from a separate file, so add the same entry to `tui.json` alongside
-your `opencode.json` (creating it if it does not exist):
+## Migrating from OpenCode 1
 
-```json
-{
-  "plugin": ["superagent@git+https://github.com/taylorelley/superagent.git"]
-}
-```
+1. Upgrade OpenCode: `curl -fsSL https://opencode.ai/v2/install | bash`.
+2. In `opencode.json`, rename `plugin` to `plugins` and replace
+   `superagent@git+https://github.com/taylorelley/superagent.git` with
+   `github:taylorelley/superagent` — or remove the old entry and run
+   `opencode plugin add github:taylorelley/superagent`.
+3. Remove the `superagent` entry from `tui.json`.
+4. Drop `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` from how you start
+   OpenCode; V2's `subagent` tool supports background dispatch natively.
 
-Restart OpenCode and open a session; the panel appears under the sidebar's own
-sections. Everything else works without this — you just get no panel.
+`superagent.json` needs no changes. Permission overrides written with V1 tool
+names (`task`, `bash`) are translated to V2's (`subagent`, `shell`).
 
 ## Migrating from the old symlink-based install
 
@@ -100,28 +119,29 @@ use skill tool to load brainstorming
 
 ## Updating
 
-OpenCode installs Superagent through a git-backed package spec. Some OpenCode
-and Bun versions pin that resolved git dependency in a lockfile or cache, so a
-restart may not pick up the newest Superagent commit. If updates do not appear,
-clear OpenCode's package cache or reinstall the plugin.
+```bash
+opencode plugin update github:taylorelley/superagent
+opencode service restart
+```
 
-Superagent checks GitHub for a newer version once per session and notes it in
-the sidebar panel (and, best-effort, a TUI popup) when one exists. `/update`
+Use the target exactly as it appears in your `plugins` array. OpenCode checks
+unpinned git plugins for updates when its server starts, but never changes the
+installed copy on its own.
+
+Superagent also checks GitHub for a newer version once per server start and
+notes it in the sidebar panel (and a TUI toast) when one exists. `/update`
 reports the current and latest known versions; `/update install` runs the
-update in place — `git pull --ff-only` for a git-checkout install, or the same
-`npm install ... --prefix` fallback documented below otherwise — so this
-section's manual steps are only needed if that fails, or before a restart if
-`git`/`npm` are unavailable in that environment. Either way, **a restart is
-still required**: plugin code is resolved once at OpenCode startup. See
-[docs/superagent.md#updates](../docs/superagent.md#updates). Turn the check
-off with `{"updateCheck": {"enabled": false}}` in `superagent.json`.
+update in place — `opencode plugin update <target>` for a configured package,
+`git pull --ff-only` for a git checkout, or the `npm install ... --prefix`
+fallback documented below otherwise. Either way, **the service must restart**
+(`opencode service restart`): plugin code is imported once, when the plugin
+loads. See [docs/superagent.md#updates](../docs/superagent.md#updates). Turn
+the check off with `{"updateCheck": {"enabled": false}}` in `superagent.json`.
 
 To follow a branch or tag, append it:
 
-```json
-{
-  "plugin": ["superagent@git+https://github.com/taylorelley/superagent.git#main"]
-}
+```bash
+opencode plugin add 'github:taylorelley/superagent#main'
 ```
 
 A branch moves, so that selects a line of development rather than pinning one.
@@ -131,42 +151,32 @@ For a reproducible install, append a full commit SHA instead.
 
 ### Plugin not loading
 
-1. Check logs: `opencode run --print-logs "hello" 2>&1 | grep -i superagent`
-2. Verify the plugin line in your `opencode.json`
-3. Make sure you're running a recent version of OpenCode
+1. `opencode plugin list` — is `superagent` listed and active?
+2. Check logs: `opencode run --standalone --print-logs "hello" < /dev/null 2>&1 | grep -iE 'superagent|plugin'`.
+   A `failed to load plugin` line names the cause.
+3. Verify the entry is under `plugins` (OpenCode 2), not `plugin` (OpenCode 1).
+4. Make sure you're running OpenCode 2: `opencode --version`.
 
 ### Git-backed plugin specs fail to resolve
 
-OpenCode installs git-backed specs (`superagent@git+https://…`) through its own
-plugin manager, and some OpenCode/Bun versions pin or cache the resolved
-dependency. Symptoms: the plugin fails to load in `opencode.json`, the TUI
-panel never appears, or the two sides load different versions. The reliable
-workaround is to install with npm and point OpenCode at the local package:
+If `opencode plugin add` cannot fetch or install the package, install it with
+npm and point OpenCode at the local package directory (OpenCode 2 local
+plugin entries must name a directory; use an absolute path):
 
 ```bash
 npm install superagent@git+https://github.com/taylorelley/superagent.git --prefix ~/.config/opencode
 ```
 
-Then use the installed path in **both** files:
-
 ```json
 {
-  "plugin": ["~/.config/opencode/node_modules/superagent"]
+  "plugins": ["/home/you/.config/opencode/node_modules/superagent"]
 }
 ```
 
-```json
-{
-  "plugin": ["~/.config/opencode/node_modules/superagent"]
-}
-```
-
-The server (`opencode.json`) and the TUI (`tui.json`) must resolve the **same
-version** of the plugin. A mismatch is silent until a dispatch happens, and
-then shows as `server v… ≠ panel v…` in the Dispatches section.
-
-On Windows some OpenCode builds additionally fail to find `git.exe` for
-`git+https` specs; the npm-install path above works there too.
+The server and TUI parts load from that one entry, so they always run the same
+version. A panel that still shows `server v… ≠ panel v…` in its Dispatches
+section is reading a snapshot written by a server that has not restarted since
+an update — run `opencode service restart`.
 
 ### Skills not found
 
@@ -180,15 +190,16 @@ Skills speak in actions ("create a todo", "dispatch a subagent", "read a file").
 <!-- BEGIN GENERATED TOOL MAP — source: .opencode/lib/tool-map.js -->
 
 - Create or update todos → `todowrite`
-- `Subagent (general-purpose):` → `task` with `subagent_type: "general"`
+- `Subagent (general-purpose):` → `subagent` with `agent: "general"`
 - Invoke a skill → OpenCode's native `skill` tool
 - Read files → `read`
-- Create, edit, or delete files → `apply_patch`
-- Run shell commands → `bash`
+- Create, edit, or delete files → `edit`, `write` (or `patch` where offered)
+- Run shell commands → `shell`
 - Search files → `grep`, `glob`
 - Fetch a URL → `webfetch`
 
-For read-only codebase exploration, prefer `subagent_type: "explore"`.
+For read-only codebase exploration, prefer `agent: "explore"`.
+To continue a subagent, call `subagent` again with the `sessionID` it returned.
 Use OpenCode's native `skill` tool to list and load skills.
 
 <!-- END GENERATED TOOL MAP -->
@@ -203,14 +214,8 @@ to its own model. It is on by default.
 > `taylorelley/superagent`; installing `obra/superpowers` gets you the skills
 > without it.
 
-For parallel dispatch, start OpenCode with background subagents enabled:
-
-```bash
-OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true opencode
-```
-
-Without it everything still works; the orchestrator dispatches in one message
-instead of in the background.
+Parallel dispatch uses the `subagent` tool's built-in `background: true`;
+there is no flag to set.
 
 Configure in `~/.config/opencode/superagent.json` or
 `<project>/.opencode/superagent.json`. To turn the whole layer off and get the

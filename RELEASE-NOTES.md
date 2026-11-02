@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### OpenCode 2
+
+Superagent is now an [OpenCode 2](https://opencode.ai/v2/docs/plugins/)
+plugin. **This is a breaking change: it no longer loads in OpenCode 1**, whose
+plugin implementations do not run in V2 (and vice versa).
+
+- Install with `opencode plugin add github:taylorelley/superagent`, or list
+  `github:taylorelley/superagent` under `plugins` (not `plugin`) in
+  `opencode.json`. The one entry loads the server part and the TUI sidebar
+  panel; the `tui.json` entry is no longer needed.
+- Both parts are V2 `{ id, setup }` plugins with no dependencies. Skills,
+  agents and commands are registered through V2 transforms; the bootstrap and
+  job board are injected through the session `context` hook; dispatches are
+  tracked on the `subagent` tool and background completions through the event
+  stream.
+- `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS` is gone: V2's `subagent` tool
+  supports `background: true` natively, so the routing table always offers it
+  and SDD's Parallel Waves no longer need a flag.
+- The tool map and routing table speak V2's tools (`subagent` with `agent`,
+  `shell`, `edit`/`write`). Agent permissions are V2 rule lists;
+  `permissionOverrides` written with V1 names (`task`, `bash`) are translated.
+- Per-slot temperatures are applied per request, since V2 agents have no
+  temperature field.
+- `/preset <name> --persist` now applies the preset by reloading the plugin's
+  agents and commands, instead of requiring a restart. A running session keeps
+  the agent and model it selected.
+- A personal or project skill with the same ID as a Superagent skill now
+  replaces it, and edits to the skills directory are picked up by a running
+  server.
+- The sidebar panel repaints live through a Solid signal, instead of only when
+  the host re-rendered it. The update notice is a TUI toast.
+- `/update install` uses `opencode plugin update <target>` when Superagent is
+  a configured package.
+
 ### Update checker
 
 - Superagent now checks GitHub once per session for a newer release and notes

@@ -1,79 +1,58 @@
 /**
- * Superagent's TUI plugin: the sidebar panel.
+ * Superagent's TUI plugin for OpenCode V2: the sidebar panel.
  *
- * Registered separately from the server plugin, because OpenCode requires it:
- * a plugin module default-exports either `server()` or `tui()`, never both, and
- * the TUI entry is resolved from `exports["./tui"]` in package.json. It is also
- * configured separately — the TUI reads its plugin list from `tui.json`, not
- * `opencode.json`. See docs/superagent.md for the details and the sources.
+ * This is the package's `./tui` export. In V2 one `plugins` entry in
+ * `opencode.json` loads every part of a package — the TUI loads the TUI parts
+ * of the plugins its server loads — so there is no separate `tui.json` entry
+ * any more. A TUI part is a plain `{ id, setup(context) }` object, like the
+ * server part.
  *
  * Thin on purpose, like `../plugins/superagent.js`: this file resolves the
- * element factory, assembles the model, and polls. The layout lives in
- * `../lib/tui-panel.js` as a pure function, and everything it needs about the
- * roster and the configuration comes from the same modules the server plugin
- * uses, so the two can never tell the user different stories.
+ * host's OpenTUI and Solid runtimes, assembles the model, and watches the
+ * board snapshot. The layout lives in `../lib/tui-panel.js` as a pure
+ * function, and everything it needs about the roster and the configuration
+ * comes from the same modules the server plugin uses, so the two can never
+ * tell the user different stories.
  *
  * ## Getting an element factory without a dependency
  *
- * OpenTUI is not a dependency of this package, by policy and by practicality —
- * the TUI must render through the host's own instance, not a second copy. The
- * host installs a Bun module resolver that maps its runtime modules onto
- * virtual `opentui:runtime-module:*` ids (`@opentui/solid`'s
- * `ensureRuntimePluginSupport`), and those ids resolve from anywhere, including
- * a plugin installed under `node_modules`. A bare `@opentui/solid` import does
- * not: the resolver deliberately leaves bare specifiers inside `node_modules`
- * alone, so it only works for plugins that ship OpenTUI themselves. Both are
- * tried, in that order, and a failure to load either one is not fatal — the
- * panel simply does not register.
+ * OpenTUI and Solid are not dependencies of this package, by policy and by
+ * practicality — the TUI must render through the host's own instances, not
+ * second copies. The host maps its runtime modules onto virtual
+ * `opentui:runtime-module:*` ids, which resolve from anywhere, including a
+ * plugin installed under `node_modules`; a bare `@opentui/solid` import only
+ * works for plugins that ship OpenTUI themselves. Both are tried, in that
+ * order, and a failure to load either one is not fatal — the panel simply
+ * does not register.
+ *
+ * ## Staying live
+ *
+ * V2 renders a slot claim inside Solid's ownership tree, and OpenTUI finds its
+ * renderer through Solid context. So the panel's root is filled with a
+ * *reactive* `insert`: the poll timer and the click handlers bump a signal,
+ * and Solid re-runs the insert inside the slot's own owner, where creating
+ * elements is legal. That replaces V1's workaround of repainting only when the
+ * host happened to re-invoke the slot.
  */
 
 import fs from 'fs';
 import { resolveConfigDir } from '../lib/paths.js';
 import { loadConfig } from '../lib/config-schema.js';
 import { ROSTER } from '../lib/roster.js';
-import { renderPanel, MAX_AGENT_ROWS, MAX_DISPATCH_ROWS } from '../lib/tui-panel.js';
+import { renderPanel, panelTheme, MAX_AGENT_ROWS, MAX_DISPATCH_ROWS } from '../lib/tui-panel.js';
 import { snapshotPath, readSnapshot, sessionRecords, readVersion } from '../lib/tui-snapshot.js';
 import { debug, warn } from '../lib/log.js';
 
 export { readVersion };
 
-/** How often the board snapshot is re-checked. Slim uses the same cadence. */
+/** How often the board snapshot is re-checked. */
 const POLL_MS = 1000;
 
-const SOLID_SPECIFIERS = [
-  `opentui:runtime-module:${encodeURIComponent('@opentui/solid')}`,
-  '@opentui/solid',
-];
+const runtimeSpecifiers = (name) => [`opentui:runtime-module:${encodeURIComponent(name)}`, name];
 
-/**
- * Candidate names for a node-removal function on the OpenTUI module.
- *
- * `createElement`/`setProp`/`insert` are confirmed exports (that is how the
- * panel has always rendered), but nothing here has ever needed to remove a
- * node, so no removal export has ever been confirmed. These are tried, in
- * order, as a best effort — see `elementFactory`'s `unmount` and
- * "Still unverified" in docs/superagent.md.
- */
-const REMOVE_EXPORT_NAMES = ['remove', 'removeChild', 'removeNode', 'unmount'];
-
-/**
- * Wrap OpenTUI's imperative element API in the `{ box, text, mount, unmount }`
- * the panel wants.
- *
- * `mount`/`unmount` are the low-level primitives the `tui()` entry's
- * `repaint()` function uses to patch an already-mounted root node's children
- * in place, instead of building a disconnected tree every poll tick and
- * hoping the host will pick it up on its own. `unmount` is `null` when the
- * module exposes nothing under any of `REMOVE_EXPORT_NAMES` — in that case
- * in-place repaint is disabled and `repaint()` degrades to the single
- * initial render this panel has always done.
- */
+/** Wrap OpenTUI's Solid renderer in the `{ box, text }` the panel wants. */
 export const elementFactory = (mod) => {
   const { createElement, setProp, insert } = mod ?? {};
-  const removeExport = REMOVE_EXPORT_NAMES.map((name) => mod?.[name]).find(
-    (fn) => typeof fn === 'function',
-  );
-
   const element = (tag, props, children = []) => {
     const node = createElement(tag);
     for (const [key, value] of Object.entries(props ?? {})) {
@@ -88,18 +67,17 @@ export const elementFactory = (mod) => {
   return {
     box: (props, children) => element('box', props, children),
     text: (props, children) => element('text', props, children),
-    mount: (parent, child) => insert(parent, child),
-    unmount: removeExport ? (parent, child) => removeExport(parent, child) : null,
   };
 };
 
-export const loadElementFactory = async (specifiers = SOLID_SPECIFIERS) => {
+/** Import the first specifier that yields a module passing `accept`. */
+const importFirst = async (specifiers, accept) => {
   for (const specifier of specifiers) {
     try {
       const mod = await import(specifier);
-      if (typeof mod?.createElement === 'function') {
+      if (accept(mod)) {
         debug(`tui panel using ${specifier}`);
-        return elementFactory(mod);
+        return mod;
       }
     } catch (err) {
       debug(`tui panel could not import ${specifier}: ${err.message}`);
@@ -109,49 +87,55 @@ export const loadElementFactory = async (specifiers = SOLID_SPECIFIERS) => {
 };
 
 /**
- * The roster as the panel should list it.
- *
- * Derived rather than reported: the plugin knows exactly which agents it
- * registered, but telling the panel would mean a second thing to keep in the
- * snapshot and a second thing to go stale. `registerAgents` skips a roster
- * entry when it is disabled by config or when its name is already taken, and
- * the resolved agent map the TUI already holds is enough to see the difference
- * — with one honest limitation: an entry whose name collided is indexed under
- * the *other* agent's definition, so presence means "a agent by this name
- * exists", not "ours won".
+ * The host runtimes the panel renders through: OpenTUI's Solid renderer (for
+ * elements and reactive `insert`) and Solid itself (for the signal).
  */
-export const panelAgents = (settings, config) => {
-  if (settings?.agents?.enabled === false) return [];
-
-  const { prefix = '', disable = [], models = {} } = settings?.agents ?? {};
-  const registered = config?.agent && typeof config.agent === 'object' ? config.agent : null;
-
-  return ROSTER.filter((entry) => !disable.includes(entry.key))
-    .map((entry) => ({ name: `${prefix}${entry.key}`, model: models[entry.slot] ?? null }))
-    .filter((agent) => !registered || Object.prototype.hasOwnProperty.call(registered, agent.name));
+export const loadRuntime = async ({
+  solidSpecifiers = runtimeSpecifiers('@opentui/solid'),
+  signalSpecifiers = runtimeSpecifiers('solid-js'),
+} = {}) => {
+  const solid = await importFirst(
+    solidSpecifiers,
+    (mod) => typeof mod?.createElement === 'function' && typeof mod?.insert === 'function',
+  );
+  const signals = await importFirst(
+    signalSpecifiers,
+    (mod) => typeof mod?.createSignal === 'function',
+  );
+  if (!solid || !signals) return null;
+  return { h: elementFactory(solid), insert: solid.insert, createSignal: signals.createSignal };
 };
 
 /**
- * The most recently touched session in a snapshot.
+ * The roster as the panel should list it.
  *
- * A fallback for picking which board to show. `sidebar_content` declares a
- * `session_id` prop, but what a slot function actually receives is the slot
- * *context* — `{ theme }` — so the id has to come from the route instead, and
- * this covers the case where that is not a session route either. Wrong only if
- * two sessions in one project are dispatching at once, and then only until the
- * next dispatch.
+ * Derived rather than reported: `registerAgents` skips a roster entry when it
+ * is disabled by config or when its name is already taken, and the agent list
+ * the TUI already holds for this location is enough to see the difference —
+ * with one honest limitation: an entry whose name collided is listed under the
+ * *other* agent's definition, so presence means "an agent by this name
+ * exists", not "ours won". `agents` is that list (`[{ id }]`), or null while
+ * it has not loaded, in which case nothing is filtered out.
+ */
+export const panelAgents = (settings, agents) => {
+  if (settings?.agents?.enabled === false) return [];
+
+  const { prefix = '', disable = [], models = {} } = settings?.agents ?? {};
+  const known = Array.isArray(agents) ? new Set(agents.map((agent) => agent?.id)) : null;
+
+  return ROSTER.filter((entry) => !disable.includes(entry.key))
+    .map((entry) => ({ name: `${prefix}${entry.key}`, model: models[entry.slot] ?? null }))
+    .filter((agent) => !known || known.has(agent.name));
+};
+
+/**
+ * The most recently touched session in a snapshot — the fallback when the
+ * slot was rendered without a session.
  */
 export const newestSessionID = (snapshot) => {
   const entries = Object.entries(snapshot?.sessions ?? {});
   if (!entries.length) return null;
   return entries.sort(([, a], [, b]) => (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0))[0][0];
-};
-
-/** The session the panel should be describing. */
-export const currentSessionID = (api, props, snapshot) => {
-  const route = api?.route?.current;
-  if (route?.name === 'session' && route.params?.sessionID) return route.params.sessionID;
-  return props?.session_id ?? newestSessionID(snapshot);
 };
 
 /**
@@ -169,9 +153,6 @@ export const dispatchState = ({ hasFile, snapshot, panelVersion }) => {
     return 'version-mismatch';
   }
   if (!snapshot.pluginVersion) {
-    // The server's own readVersion() failed (e.g. an unreadable package.json
-    // in a broken install), so a real skew here would go undetected. Not
-    // worth surfacing to the user over a working panel, but worth a trace.
     debug('tui panel: snapshot has no pluginVersion; skipping the version-skew check');
   }
   return 'ok';
@@ -182,16 +163,9 @@ export const dispatchState = ({ hasFile, snapshot, panelVersion }) => {
  *
  * A tiny state machine, not part of `renderPanel` (which stays a pure
  * function of its inputs): the Agents section's expanded/collapsed flag and
- * both lists' row limits live here instead, seeded once from config and
- * mutated only by a click. `onChange` is called after every mutation so the
- * caller can drive a repaint — in practice the `tui()` entry's own
- * `repaint()` — the same way a poll tick does, with no separate refresh path
- * to keep in sync.
- *
- * Exported and tested on its own, the same way `panelAgents`/`dispatchState`
- * are: the click handlers this returns end up wired into a live OpenTUI node
- * that only exists once the host actually renders the panel, so the state
- * machine itself is what unit tests can exercise without a terminal.
+ * both lists' row limits live here, seeded once from config and mutated only
+ * by a click. `onChange` is called after every mutation — in practice it
+ * bumps the signal the panel's reactive insert reads.
  */
 export const createPanelInteractions = (agentsExpandedDefault, onChange) => {
   let agentsExpanded = agentsExpandedDefault === true;
@@ -220,210 +194,129 @@ export const createPanelInteractions = (agentsExpandedDefault, onChange) => {
   };
 };
 
-/**
- * Keeps one root node alive across repaints and patches its child in place.
- *
- * The reason this exists at all: `requestRender()` repaints whatever node
- * tree the host already has, but nothing confirms the host re-invokes
- * `sidebar_content` to hand it a *new* tree on every poll tick or click (see
- * the `tui()` entry's own comment, and docs/superagent.md). So the panel
- * mounts one root the first time it is asked for content, and from then on
- * repaints by swapping that root's child, using `h.mount`/`h.unmount` — the
- * same primitives `elementFactory` exposes.
- *
- * Isolated from `tui()` so it can be exercised with a recording `h`, exactly
- * like `elementFactory` itself already is — no OpenTUI or terminal needed.
- */
-export const createRootRepainter = (h) => {
-  let root = null;
-  let mountedChild = null;
+const mtimeOf = (target) => {
+  try {
+    return fs.statSync(target).mtimeMs;
+  } catch {
+    return 0;
+  }
+};
 
-  return {
-    get root() {
+/**
+ * `deps` is not part of OpenCode's call signature — it is an injection seam
+ * so tests can hand `setup` a recording runtime instead of the host's.
+ */
+const setup = async (context, deps = {}) => {
+  const location = context?.location ?? context?.data?.location?.default?.();
+  const directory = location?.directory ?? process.cwd();
+  const configDir = resolveConfigDir();
+  const settings = loadConfig({ configDir, projectDir: directory });
+  if (settings.tui?.enabled === false) {
+    debug('tui panel disabled by config');
+    return undefined;
+  }
+
+  const runtime = await (deps.loadRuntime ?? loadRuntime)();
+  if (!runtime) {
+    warn('could not load the OpenTUI runtime; the Superagent sidebar panel is not available');
+    return undefined;
+  }
+  const { h, insert, createSignal } = runtime;
+
+  const version = readVersion() ?? context?.app?.version ?? 'dev';
+  const subsystems = {
+    agents: settings.agents?.enabled !== false,
+    board: settings.board?.enabled !== false,
+    council: settings.council?.enabled === true,
+  };
+
+  const file = snapshotPath(configDir, directory);
+  let stamp = mtimeOf(file);
+  let snapshot = stamp > 0 ? readSnapshot(file) : null;
+
+  const [tick, setTick] = createSignal(0);
+  const bump = () => setTick((n) => n + 1);
+  const interactions = createPanelInteractions(settings.tui?.agents?.expanded, bump);
+
+  // The roster section lists what this location actually registered. The
+  // agent list is the host's reactive data, so reading it inside the panel's
+  // insert keeps the section current after a sync.
+  const agentData = context?.data?.location?.agent;
+  void Promise.resolve(agentData?.sync?.(location)).catch((err) =>
+    debug(`tui panel: agent sync failed: ${err.message}`),
+  );
+
+  // One toast per TUI process when the server reports an update.
+  let toasted = false;
+  const announceUpdate = () => {
+    if (toasted || !snapshot?.updateAvailable) return;
+    toasted = true;
+    context?.ui?.toast?.show?.({
+      title: 'Superagent',
+      message: `Update available: v${snapshot.latestVersion} (run /update install)`,
+      variant: 'info',
+    });
+  };
+  announceUpdate();
+
+  const build = (sessionID) => {
+    const current = sessionID || newestSessionID(snapshot);
+    return renderPanel(
+      {
+        version,
+        preset: settings.preset,
+        subsystems,
+        agents: panelAgents(settings, agentData?.list?.(location) ?? null),
+        records: sessionRecords(snapshot, current),
+        snapshotState: dispatchState({ hasFile: stamp > 0, snapshot, panelVersion: version }),
+        pluginVersion: snapshot?.pluginVersion ?? null,
+        updateAvailable: snapshot?.updateAvailable ?? false,
+        latestVersion: snapshot?.latestVersion ?? null,
+        theme: panelTheme(context?.theme),
+        ...interactions.state,
+        onToggleAgents: interactions.toggleAgents,
+        onRevealMoreAgents: interactions.revealMoreAgents,
+        onRevealMoreDispatches: interactions.revealMoreDispatches,
+      },
+      h,
+    );
+  };
+
+  // Only re-parse when the file actually moved: this runs for the life of the
+  // TUI, next to a renderer whose whole job is not doing unnecessary work.
+  const poll = () => {
+    const mtime = mtimeOf(file);
+    if (mtime === stamp) return;
+    stamp = mtime;
+    snapshot = mtime > 0 ? readSnapshot(file) : null;
+    announceUpdate();
+    bump();
+  };
+  const timer = setInterval(poll, POLL_MS);
+  timer.unref?.();
+
+  const release = context.ui.slot({
+    append: 'sidebar.content',
+    render: (input) => {
+      const root = h.box({ width: '100%', flexDirection: 'column' }, []);
+      insert(root, () => {
+        tick();
+        try {
+          return build(input?.sessionID);
+        } catch (err) {
+          debug(`tui panel: render failed: ${err.message}`);
+          return null;
+        }
+      });
       return root;
     },
-    /** Create the root once, and return it every time after. */
-    ensureRoot: () => {
-      if (!root) root = h.box({ width: '100%', flexDirection: 'column' }, []);
-      return root;
-    },
-    /**
-     * Swap the mounted child for `next`. Returns whether it actually did —
-     * false before `ensureRoot()` has run, and false after the first paint
-     * when `h.unmount` is unavailable: swapping without a way to remove the
-     * old child would only stack a new tree on top of it, which is worse
-     * than leaving the first, correct render alone.
-     */
-    patch: (next) => {
-      if (!root) return false;
-      if (mountedChild && !h.unmount) return false;
-      if (mountedChild) h.unmount(root, mountedChild);
-      h.mount(root, next);
-      mountedChild = next;
-      return true;
-    },
+  });
+
+  debug(`tui panel registered (v${version}, preset ${settings.preset})`);
+  return () => {
+    clearInterval(timer);
+    release?.();
   };
 };
 
-export default {
-  id: 'superagent:tui',
-
-  // `deps` is not part of OpenCode's call signature — it is an injection seam
-  // so tests can hand `tui()` a recording element factory instead of the real
-  // `loadElementFactory()`, which only ever resolves against a live host.
-  tui: async (api, _options, meta, deps = {}) => {
-    const configDir = resolveConfigDir();
-    const directory = api?.state?.path?.directory ?? process.cwd();
-    const settings = loadConfig({ configDir, projectDir: directory });
-    if (settings.tui?.enabled === false) {
-      debug('tui panel disabled by config');
-      return;
-    }
-
-    const h = await (deps.loadElementFactory ?? loadElementFactory)();
-    if (!h) {
-      warn(
-        'could not load the OpenTUI element factory; the Superagent sidebar panel is not available',
-      );
-      return;
-    }
-
-    const version = readVersion() ?? meta?.version ?? 'dev';
-    const subsystems = {
-      agents: settings.agents?.enabled !== false,
-      board: settings.board?.enabled !== false,
-      council: settings.council?.enabled === true,
-    };
-
-    const mtimeOf = (target) => {
-      try {
-        return fs.statSync(target).mtimeMs;
-      } catch {
-        return 0;
-      }
-    };
-
-    let file = snapshotPath(configDir, directory);
-    let stamp = mtimeOf(file);
-    let hasFile = stamp > 0;
-    let snapshot = hasFile ? readSnapshot(file) : null;
-    let theme = {};
-
-    /**
-     * Confirmed against a live host (see docs/superagent.md, "Staying live"):
-     * `createElement` (and so `h.box`/`h.text`) throws `Error:
-     * No renderer found` when called from outside the synchronous call stack
-     * the host uses to invoke `sidebar_content` — a poll tick or a click
-     * handler does not qualify, only the slot invocation itself does. So a
-     * kept-alive root that gets rebuilt from a timer can never work: every
-     * such rebuild throws, and `@opentui/solid` additionally exposes no
-     * `remove`/`removeChild`/`removeNode`/`unmount` export to patch one in
-     * place even where that were possible. `repainter` is therefore rebuilt
-     * from scratch on every `sidebar_content` call rather than reused across
-     * calls — reusing one meant handing the host back a node from a possibly
-     * already-torn-down render pass (e.g. after viewing a subagent session and
-     * returning), which is what made the panel go blank instead of refreshing.
-     */
-    let repainter = null;
-
-    if (!h.unmount) {
-      warn(
-        'tui panel: the OpenTUI module exposes no node-removal function this plugin ' +
-          'recognizes; live in-place repaint from a poll tick or click is not possible ' +
-          "against this host (confirmed: creating elements outside the host's own render " +
-          'call throws). The panel only refreshes when the host itself re-invokes ' +
-          'sidebar_content (e.g. switching views). See docs/superagent.md.',
-      );
-    }
-
-    /**
-     * Rebuilds the panel tree and patches it into `repainter`'s root.
-     *
-     * Only ever safe to call synchronously from within a `sidebar_content`
-     * invocation — see the comment above `repainter`. Called from other
-     * places anyway (a poll tick, a click) on the chance a given host or
-     * OpenTUI version behaves differently; wrapped so a throw there degrades
-     * to "nothing happened this tick" instead of an uncaught exception, per
-     * this module's own rule that nothing here may take down the session.
-     */
-    const repaint = () => {
-      if (!repainter?.root) return;
-      const sessionID = currentSessionID(api, undefined, snapshot);
-      const records = sessionRecords(snapshot, sessionID);
-      const state = dispatchState({ hasFile, snapshot, panelVersion: version });
-      debug(
-        `tui panel: file=${file} mtime=${stamp} state=${state} ` +
-          `session=${sessionID} records=${records.length}`,
-      );
-      try {
-        const next = renderPanel(
-          {
-            version,
-            preset: settings.preset,
-            subsystems,
-            agents: panelAgents(settings, api?.state?.config),
-            records,
-            snapshotState: state,
-            pluginVersion: snapshot?.pluginVersion ?? null,
-            updateAvailable: snapshot?.updateAvailable ?? false,
-            latestVersion: snapshot?.latestVersion ?? null,
-            theme,
-            ...interactions.state,
-            onToggleAgents: interactions.toggleAgents,
-            onRevealMoreAgents: interactions.revealMoreAgents,
-            onRevealMoreDispatches: interactions.revealMoreDispatches,
-          },
-          h,
-        );
-
-        if (repainter.patch(next)) api?.renderer?.requestRender?.();
-      } catch (err) {
-        debug(`tui panel: repaint outside a render pass failed harmlessly: ${err.message}`);
-      }
-    };
-
-    const interactions = createPanelInteractions(settings.tui?.agents?.expanded, () => repaint());
-
-    // Only re-parse when the file actually moved, and only repaint when
-    // something changed: this runs for the life of the session, next to a
-    // renderer whose whole job is not doing unnecessary work.
-    const poll = () => {
-      const current = api?.state?.path?.directory ?? directory;
-      const next = snapshotPath(configDir, current);
-      const mtime = mtimeOf(next);
-      if (next === file && mtime === stamp) return;
-      file = next;
-      stamp = mtime;
-      hasFile = mtime > 0;
-      snapshot = hasFile ? readSnapshot(next) : null;
-      repaint();
-    };
-
-    const timer = setInterval(poll, POLL_MS);
-    timer.unref?.();
-    api?.lifecycle?.onDispose?.(() => clearInterval(timer));
-
-    api.slots.register({
-      order: 900,
-      slots: {
-        // The argument is the slot context the host renders with, not the slot
-        // props the type declares — `{ theme }`, live, so it is preferred over
-        // the api's copy. Captured into the outer `theme` variable so `repaint()`
-        // can use it from a poll tick or a click, neither of which get a context.
-        sidebar_content: (context) => {
-          theme = context?.theme?.current ?? api?.theme?.current ?? {};
-          // A fresh repainter (and so a fresh root) every call: this is the
-          // one place `createElement` is confirmed safe to run, so there is
-          // nothing to gain — and a stale-node risk to lose — by trying to
-          // keep the previous call's root alive across it.
-          repainter = createRootRepainter(h);
-          const root = repainter.ensureRoot();
-          repaint();
-          return root;
-        },
-      },
-    });
-
-    debug(`tui panel registered (v${version}, preset ${settings.preset})`);
-  },
-};
+export default { id: 'superagent.tui', setup };

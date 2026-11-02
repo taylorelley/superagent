@@ -1,5 +1,11 @@
 /**
- * Installing an update: shell out to `git` or `npm`.
+ * Installing an update: shell out to `opencode`, `git`, or `npm`.
+ *
+ * OpenCode V2 installs package plugins itself (`opencode plugin add`) into its
+ * own cache and updates them with `opencode plugin update <target>`, so that
+ * is the first choice whenever Superagent is a configured package target. A
+ * git checkout is pulled in place; anything else falls back to the npm
+ * install `.opencode/INSTALL.md` documents.
  *
  * This is the one dependency exception AGENTS.md allows — a tool the user's
  * environment may already have, detected at runtime, never required, with a
@@ -11,9 +17,15 @@ import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { packageRoot, resolveConfigDir } from './paths.js';
+import { superagentPluginTarget } from './opencode-config.js';
 import { REPO_OWNER, REPO_NAME } from './update-check.js';
 
 export const GIT_SPEC = `${REPO_NAME}@git+https://github.com/${REPO_OWNER}/${REPO_NAME}.git`;
+export const PLUGIN_TARGET = `github:${REPO_OWNER}/${REPO_NAME}`;
+
+/** A target `opencode plugin update` can act on: a package, not a local path. */
+const isPackageTarget = (target) =>
+  typeof target === 'string' && !/^(\.{0,2}\/|~\/|file:|[A-Za-z]:\\)/.test(target);
 
 /**
  * Install the latest version in place.
@@ -33,6 +45,7 @@ export const performUpdate = ({
   configDir = resolveConfigDir(),
   execFileSyncImpl = execFileSync,
   hasGitCheckout = fs.existsSync(path.join(dir, '.git')),
+  pluginTarget = superagentPluginTarget({ configDir }),
 } = {}) => {
   const toolOnPath = (cmd) => {
     try {
@@ -70,6 +83,16 @@ export const performUpdate = ({
     return {
       ok: result.ok,
       method: 'git pull',
+      output: result.output,
+      error: result.ok ? null : result.output,
+    };
+  }
+
+  if (isPackageTarget(pluginTarget) && toolOnPath('opencode')) {
+    const result = run('opencode', ['plugin', 'update', pluginTarget]);
+    return {
+      ok: result.ok,
+      method: 'opencode plugin update',
       output: result.output,
       error: result.ok ? null : result.output,
     };

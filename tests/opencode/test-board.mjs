@@ -2,7 +2,8 @@
  * Unit tests for the job board and ownership checking.
  *
  * These drive the plugin's hooks with synthetic payloads shaped like the ones
- * OpenCode sends, so they need no binary.
+ * OpenCode V2 sends — `subagent` tool input, `execute.after` outcomes, the
+ * `context` hook's `{ role, content }` messages — so they need no binary.
  */
 
 import test from 'node:test';
@@ -16,6 +17,7 @@ import {
   renderBoard,
   injectBoard,
   boardSnapshots,
+  backgroundSessionID,
   resetBoards,
   BOARD_MARKER,
 } from '../../.opencode/lib/board.js';
@@ -23,10 +25,23 @@ import { loadConfig } from '../../.opencode/lib/config-schema.js';
 
 const settings = () => loadConfig({ env: {} });
 
-const userMessage = (sessionID, text = 'hello') => ({
-  info: { role: 'user', sessionID },
-  parts: [{ type: 'text', text }],
+// The session a request is for comes from the hook event in V2, not the
+// messages, so the first argument is only there to keep call sites readable.
+const userMessage = (_sessionID, text = 'hello') => ({
+  role: 'user',
+  content: [{ type: 'text', text }],
 });
+
+/** A foreground `subagent` call that finished with `text`. */
+const done = (text) => ({ status: 'completed', result: { content: [{ type: 'text', text }] } });
+
+/** A background `subagent` call, as the V2 tool reports it. */
+const launched = (sessionID) =>
+  done(
+    `The subagent is working in the background (sessionID: ${sessionID}). You will be notified automatically when it finishes.`,
+  );
+
+const isSnapshot = (p) => p.text?.trimStart().startsWith(BOARD_MARKER);
 
 // ------------------------------------------------------------- ownership
 
@@ -81,12 +96,12 @@ test('findConflicts only considers write claims against write claims', () => {
 test('a foreground dispatch is recorded and completed', () => {
   resetBoards();
   const s = settings();
-  const args = { subagent_type: 'implementer', description: 'Task 1', prompt: 'do it' };
+  const args = { agent: 'implementer', description: 'Task 1', prompt: 'do it' };
 
   onDispatch('root', 'call-1', args, s);
   assert.match(renderBoard('root'), /implementer \| Task 1 \| running/);
 
-  onDispatchResult('root', 'call-1', { output: 'done, all tests pass' }, s);
+  onDispatchResult('root', 'call-1', done('done, all tests pass'), s);
   const board = renderBoard('root');
   assert.match(board, /implementer \| Task 1 \| completed/);
   assert.match(board, /0 still running/);
@@ -98,33 +113,33 @@ test('a background dispatch stays running until its session ends', () => {
   onDispatch(
     'root',
     'call-1',
-    { subagent_type: 'implementer', description: 'Task 1', background: true },
+    { agent: 'implementer', description: 'Task 1', background: true },
     s,
   );
 
   // The tool returns as soon as the job launches — that is not completion.
-  onDispatchResult('root', 'call-1', { metadata: { background: true, jobId: 'child-9' } }, s);
+  onDispatchResult('root', 'call-1', launched('child-9'), s);
   assert.match(renderBoard('root'), /running \(bg\)/);
 
-  onSessionEvent('session.idle', 'child-9');
+  onSessionEvent('session.execution.succeeded', 'child-9');
   assert.match(renderBoard('root'), /completed/);
 });
 
 test('a failed background dispatch is recorded as an error, not a completion', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'T', background: true }, s);
-  onDispatchResult('root', 'c1', { metadata: { background: true, jobId: 'child-1' } }, s);
-  onSessionEvent('session.error', 'child-1');
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'T', background: true }, s);
+  onDispatchResult('root', 'c1', launched('child-1'), s);
+  onSessionEvent('session.execution.failed', 'child-1');
   assert.match(renderBoard('root'), /\| error \(bg\) \|/);
 });
 
 test('an unrelated session event does not touch the board', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'T', background: true }, s);
-  onDispatchResult('root', 'c1', { metadata: { background: true, jobId: 'child-1' } }, s);
-  onSessionEvent('session.idle', 'some-other-session');
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'T', background: true }, s);
+  onDispatchResult('root', 'c1', launched('child-1'), s);
+  onSessionEvent('session.execution.succeeded', 'some-other-session');
   assert.match(renderBoard('root'), /running/);
 });
 
@@ -132,12 +147,12 @@ test('conflicting write claims annotate the second dispatch', () => {
   resetBoards();
   const s = settings();
   const first = {
-    subagent_type: 'implementer',
+    agent: 'implementer',
     description: 'API',
     prompt: '<!-- superagent-ownership: write=src/api/** -->\nbuild the api',
   };
   const second = {
-    subagent_type: 'implementer',
+    agent: 'implementer',
     description: 'Routes',
     prompt: '<!-- superagent-ownership: write=src/api/routes.ts -->\nedit routes',
   };
@@ -159,7 +174,7 @@ test('non-overlapping claims are not flagged', () => {
   resetBoards();
   const s = settings();
   const second = {
-    subagent_type: 'implementer',
+    agent: 'implementer',
     description: 'Docs',
     prompt: '<!-- superagent-ownership: write=docs/** -->\nwrite docs',
   };
@@ -167,7 +182,7 @@ test('non-overlapping claims are not flagged', () => {
     'root',
     'c1',
     {
-      subagent_type: 'implementer',
+      agent: 'implementer',
       description: 'API',
       prompt: '<!-- superagent-ownership: write=src/api/** -->',
     },
@@ -184,16 +199,16 @@ test('a completed dispatch no longer conflicts with a new one', () => {
     'root',
     'c1',
     {
-      subagent_type: 'implementer',
+      agent: 'implementer',
       description: 'API',
       prompt: '<!-- superagent-ownership: write=src/api/** -->',
     },
     s,
   );
-  onDispatchResult('root', 'c1', { output: 'done' }, s);
+  onDispatchResult('root', 'c1', done('done'), s);
 
   const second = {
-    subagent_type: 'implementer',
+    agent: 'implementer',
     description: 'More API',
     prompt: '<!-- superagent-ownership: write=src/api/** -->\ngo',
   };
@@ -204,19 +219,14 @@ test('a completed dispatch no longer conflicts with a new one', () => {
 test('the board flags running dispatches that declared no ownership', () => {
   resetBoards();
   const s = settings();
-  onDispatch(
-    'root',
-    'c1',
-    { subagent_type: 'implementer', description: 'T', prompt: 'no marker' },
-    s,
-  );
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'T', prompt: 'no marker' }, s);
   assert.match(renderBoard('root'), /declared no file ownership/);
 });
 
 test('boards are per session', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root-a', 'c1', { subagent_type: 'implementer', description: 'A' }, s);
+  onDispatch('root-a', 'c1', { agent: 'implementer', description: 'A' }, s);
   assert.match(renderBoard('root-a'), /\| A \|/);
   assert.equal(renderBoard('root-b'), null);
 });
@@ -225,7 +235,7 @@ test('the board is disabled by config', () => {
   resetBoards();
   const s = settings();
   s.board.enabled = false;
-  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'T' }, s);
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'T' }, s);
   assert.equal(renderBoard('root'), null);
 });
 
@@ -234,37 +244,35 @@ test('the board is disabled by config', () => {
 test('nothing is injected when no dispatch has happened', () => {
   resetBoards();
   const messages = [userMessage('root')];
-  assert.equal(injectBoard(messages, settings()), false);
-  assert.equal(messages[0].parts.length, 1);
+  assert.equal(injectBoard(messages, 'root', settings()), false);
+  assert.equal(messages[0].content.length, 1);
 });
 
 test('the latest strategy leaves exactly one snapshot after repeated transforms', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'T' }, s);
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'T' }, s);
 
   const messages = [userMessage('root')];
-  injectBoard(messages, s);
-  injectBoard(messages, s);
-  injectBoard(messages, s);
+  injectBoard(messages, 'root', s);
+  injectBoard(messages, 'root', s);
+  injectBoard(messages, 'root', s);
 
-  const snapshots = messages
-    .flatMap((m) => m.parts)
-    .filter((p) => p.text?.startsWith(BOARD_MARKER));
+  const snapshots = messages.flatMap((m) => m.content).filter((p) => isSnapshot(p));
   assert.equal(snapshots.length, 1, 'stale snapshots accumulated in history');
 });
 
 test('the latest strategy replaces a stale snapshot rather than appending', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'T' }, s);
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'T' }, s);
 
   const messages = [userMessage('root')];
-  injectBoard(messages, s);
-  onDispatchResult('root', 'c1', { output: 'finished' }, s);
-  injectBoard(messages, s);
+  injectBoard(messages, 'root', s);
+  onDispatchResult('root', 'c1', done('finished'), s);
+  injectBoard(messages, 'root', s);
 
-  const snapshot = messages[0].parts.find((p) => p.text?.startsWith(BOARD_MARKER)).text;
+  const snapshot = messages[0].content.find((p) => isSnapshot(p)).text;
   assert.match(snapshot, /completed/);
   assert.ok(!snapshot.includes('| running |'), 'the stale state is still in context');
 });
@@ -272,33 +280,35 @@ test('the latest strategy replaces a stale snapshot rather than appending', () =
 test('the snapshot goes on the last user message, not the first', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'T' }, s);
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'T' }, s);
 
   const messages = [
     userMessage('root', 'first'),
-    { info: { role: 'assistant', sessionID: 'root' }, parts: [] },
+    { role: 'assistant', content: [] },
     userMessage('root', 'latest'),
   ];
-  injectBoard(messages, s);
+  injectBoard(messages, 'root', s);
 
-  assert.ok(!messages[0].parts.some((p) => p.text?.startsWith(BOARD_MARKER)));
-  assert.ok(messages[2].parts.some((p) => p.text?.startsWith(BOARD_MARKER)));
+  assert.ok(!messages[0].content.some((p) => isSnapshot(p)));
+  assert.ok(messages[2].content.some((p) => isSnapshot(p)));
 });
 
 test('a session with no board of its own gets no snapshot', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root-a', 'c1', { subagent_type: 'implementer', description: 'T' }, s);
+  onDispatch('root-a', 'c1', { agent: 'implementer', description: 'T' }, s);
   const messages = [userMessage('root-b')];
-  assert.equal(injectBoard(messages, s), false);
+  assert.equal(injectBoard(messages, 'root-b', s), false);
 });
 
 test('injection tolerates malformed message arrays', () => {
   resetBoards();
   const s = settings();
-  assert.equal(injectBoard(null, s), false);
-  assert.equal(injectBoard([], s), false);
-  assert.equal(injectBoard([{ info: {} }], s), false);
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'T' }, s);
+  assert.equal(injectBoard(null, 'root', s), false);
+  assert.equal(injectBoard([], 'root', s), false);
+  assert.equal(injectBoard([{ role: 'user' }], 'root', s), false);
+  assert.equal(injectBoard([userMessage('root')], undefined, s), false, 'no session, no board');
 });
 
 // ------------------------------------------------------------- tui snapshot
@@ -310,7 +320,7 @@ test('boardSnapshots projects the ledger as plain data for the panel', () => {
     'root',
     'c1',
     {
-      subagent_type: 'implementer',
+      agent: 'implementer',
       description: 'Add the tests',
       background: true,
       prompt: 'work\n<!-- superagent-ownership: write=src/api/** -->\n',
@@ -336,8 +346,8 @@ test('boardSnapshots projects the ledger as plain data for the panel', () => {
 test('boardSnapshots and the rendered board agree about state', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root', 'c1', { subagent_type: 'oracle', description: 'Ask' }, s);
-  onDispatchResult('root', 'c1', { output: 'answered' }, s);
+  onDispatch('root', 'c1', { agent: 'oracle', description: 'Ask' }, s);
+  onDispatchResult('root', 'c1', done('answered'), s);
 
   const record = boardSnapshots().root.records[0];
   assert.equal(record.state, 'completed');
@@ -348,8 +358,8 @@ test('boardSnapshots and the rendered board agree about state', () => {
 test('boardSnapshots covers every session, since the panel picks one later', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root-a', 'c1', { subagent_type: 'implementer', description: 'A' }, s);
-  onDispatch('root-b', 'c2', { subagent_type: 'librarian', description: 'B' }, s);
+  onDispatch('root-a', 'c1', { agent: 'implementer', description: 'A' }, s);
+  onDispatch('root-b', 'c2', { agent: 'librarian', description: 'B' }, s);
 
   assert.deepEqual(Object.keys(boardSnapshots()).sort(), ['root-a', 'root-b']);
 });
@@ -357,7 +367,7 @@ test('boardSnapshots covers every session, since the panel picks one later', () 
 test('a deleted session leaves the snapshot, as it leaves the board', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'A' }, s);
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'A' }, s);
   onSessionEvent('session.deleted', 'root');
 
   assert.deepEqual(boardSnapshots(), {});
@@ -366,7 +376,7 @@ test('a deleted session leaves the snapshot, as it leaves the board', () => {
 test('an unchanged board reports the same updatedAt, so the panel is not woken', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'A' }, s);
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'A' }, s);
 
   const first = JSON.stringify(boardSnapshots());
   assert.equal(JSON.stringify(boardSnapshots()), first, 'a wall clock leaked into the projection');
@@ -375,11 +385,53 @@ test('an unchanged board reports the same updatedAt, so the panel is not woken',
 test('onSessionEvent reports whether it changed anything', () => {
   resetBoards();
   const s = settings();
-  onDispatch('root', 'c1', { subagent_type: 'implementer', description: 'A' }, s);
-  onDispatchResult('root', 'c1', { metadata: { background: true, jobId: 'child' } }, s);
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'A', background: true }, s);
+  onDispatchResult('root', 'c1', launched('child'), s);
 
   assert.equal(onSessionEvent('message.updated', 'child'), false, 'not a lifecycle event');
-  assert.equal(onSessionEvent('session.idle', 'unknown-child'), false, 'nobody was waiting on it');
-  assert.equal(onSessionEvent('session.idle', 'child'), true);
-  assert.equal(onSessionEvent('session.idle', 'child'), false, 'it had already settled');
+  assert.equal(
+    onSessionEvent('session.execution.succeeded', 'unknown-child'),
+    false,
+    'nobody was waiting on it',
+  );
+  assert.equal(onSessionEvent('session.execution.succeeded', 'child'), true);
+  assert.equal(
+    onSessionEvent('session.execution.succeeded', 'child'),
+    false,
+    'it had already settled',
+  );
+});
+
+// ------------------------------------------------------------- V2 shapes
+
+test('a failed subagent call is recorded as an error with its message', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'T' }, s);
+  onDispatchResult('root', 'c1', { status: 'error', error: { message: 'Unknown agent: x' } }, s);
+  assert.match(renderBoard('root'), /\| error \|/);
+});
+
+test('the background child session is found in metadata, text, or the input', () => {
+  assert.equal(backgroundSessionID({ metadata: { sessionID: 'm' } }), 'm');
+  assert.equal(backgroundSessionID(launched('t').result), 't');
+  assert.equal(backgroundSessionID({ content: [] }, { sessionID: 'continued' }), 'continued');
+  assert.equal(backgroundSessionID({ content: [] }), undefined);
+});
+
+test('a background call with no child id to wait on is not left running forever', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'T', background: true }, s);
+  onDispatchResult('root', 'c1', done('started'), s);
+  assert.match(renderBoard('root'), /\| completed \(bg\) \|/);
+});
+
+test('an interrupted or deleted child settles as cancelled', () => {
+  resetBoards();
+  const s = settings();
+  onDispatch('root', 'c1', { agent: 'implementer', description: 'T', background: true }, s);
+  onDispatchResult('root', 'c1', launched('child'), s);
+  assert.equal(onSessionEvent('session.execution.interrupted', 'child'), true);
+  assert.match(renderBoard('root'), /\| cancelled \(bg\) \|/);
 });

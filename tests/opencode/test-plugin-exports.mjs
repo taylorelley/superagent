@@ -1,5 +1,5 @@
 /**
- * Verify the plugin actually imports and returns the hooks OpenCode expects.
+ * Verify the plugin actually imports and registers what OpenCode V2 expects.
  *
  * `node --check` only parses a file; it does not resolve imports. Since the
  * plugin was split across `.opencode/lib/`, a wrong relative path or a missing
@@ -9,6 +9,7 @@
  */
 
 import { pathToFileURL } from 'url';
+import { makeContext, userMessage, messageText } from './fake-v2-context.mjs';
 
 const [, , pluginPath] = process.argv;
 
@@ -17,41 +18,56 @@ if (!pluginPath) {
   process.exit(2);
 }
 
-const REQUIRED_HOOKS = ['config', 'experimental.chat.messages.transform'];
+const fail = (message) => {
+  console.error(`FAIL: ${message}`);
+  process.exit(1);
+};
 
 const mod = await import(pathToFileURL(pluginPath).href);
+const plugin = mod.default;
 
-if (typeof mod.SuperagentPlugin !== 'function') {
-  console.error('FAIL: module does not export a SuperagentPlugin function');
-  process.exit(1);
+// The V2 shape: a default-exported `{ id, setup }` (what `Plugin.define` returns).
+if (!plugin || typeof plugin.id !== 'string' || !plugin.id) fail('default export has no id');
+if (typeof plugin.setup !== 'function') fail('default export has no setup function');
+
+const fake = makeContext({ directory: '.' });
+const cleanup = await plugin.setup(fake.ctx);
+if (typeof cleanup !== 'function') fail('setup did not return a cleanup function');
+
+// Skills are registered through the skill transform, and replaying it is stable.
+const skills = fake.skills();
+if (!skills.get('using-superagent')) fail('using-superagent was not registered as a skill');
+if (!skills.get('brainstorming')?.path?.endsWith('brainstorming/SKILL.md')) {
+  fail(`brainstorming skill path looks wrong: ${skills.get('brainstorming')?.path}`);
+}
+if (fake.skills().list().length !== skills.list().length) fail('skill transform is not idempotent');
+
+// The hooks the plugin depends on are registered on their V2 domains.
+for (const [domain, name] of [
+  ['session', 'context'],
+  ['tool', 'execute.before'],
+  ['tool', 'execute.after'],
+]) {
+  if (!fake.hooks[domain][name]?.length) fail(`no ${domain} "${name}" hook registered`);
 }
 
-const plugin = await mod.SuperagentPlugin({ client: {}, directory: '.' });
-
-const missing = REQUIRED_HOOKS.filter((hook) => typeof plugin[hook] !== 'function');
-if (missing.length > 0) {
-  console.error(`FAIL: plugin is missing hook(s): ${missing.join(', ')}`);
-  process.exit(1);
-}
-
-// The config hook must register the skills directory on a bare config object,
-// and must be idempotent — OpenCode may call it more than once.
-const config = {};
-await plugin.config(config);
-await plugin.config(config);
-
-const paths = config?.skills?.paths;
-if (!Array.isArray(paths) || paths.length !== 1) {
-  console.error(`FAIL: expected exactly one registered skills path, got ${JSON.stringify(paths)}`);
-  process.exit(1);
-}
-if (!paths[0].endsWith('skills')) {
-  console.error(`FAIL: registered skills path looks wrong: ${paths[0]}`);
-  process.exit(1);
+// The context hook injects the bootstrap into the first user message.
+const event = {
+  sessionID: 's',
+  agent: 'build',
+  system: [],
+  messages: [userMessage('hi')],
+  options: {},
+};
+await fake.fire('session', 'context', event);
+if (!messageText(event.messages[0]).includes('EXTREMELY_IMPORTANT')) {
+  fail('context hook did not inject the bootstrap');
 }
 
 // A hook must never throw out into the host, even on malformed input.
-await plugin.config(null);
-await plugin['experimental.chat.messages.transform']({}, {});
+await fake.fire('session', 'context', {});
+await fake.fire('tool', 'execute.before', {});
+await fake.fire('tool', 'execute.after', { tool: 'subagent' });
 
-console.log('ok: plugin loads, exports hooks, registers skills idempotently');
+await cleanup();
+console.log('ok: plugin loads, registers skills idempotently, wires its V2 hooks');

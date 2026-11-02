@@ -8,11 +8,10 @@
  * ended but we never saw a result". That design exists because its orchestrator
  * has to discover completion for itself.
  *
- * OpenCode does not work that way. `BackgroundJob.notify()` injects a finished
- * task's result back into the parent session, and the task tool's own output
- * tells the model in as many words: "You will be notified automatically when it
- * finishes. DO NOT sleep, poll for progress, ask the task for status."
- * (See docs/superagent.md for the source references.)
+ * OpenCode does not work that way. A background `subagent` call notifies the
+ * parent session when the child finishes, and the tool's own output tells the
+ * model in as many words: "You will be notified automatically when it
+ * finishes." (See docs/superagent.md for the source references.)
  *
  * So there is no poller here, and no reconciliation state machine. Building one
  * would duplicate machinery OpenCode already has, and instruct the model to do
@@ -34,6 +33,7 @@
 
 import { parseOwnership, findConflicts, conflictNotice } from './ownership.js';
 import { debug } from './log.js';
+import { withContent } from './bootstrap.js';
 
 export const BOARD_MARKER = '<SUPERAGENT_JOB_BOARD>';
 
@@ -57,8 +57,10 @@ export const truncate = (text, max = 600) => {
 /**
  * Record a dispatch and check it against what is already running.
  *
- * Called from `tool.execute.before`, so it can annotate the outgoing prompt.
- * Mutates `args.prompt` when there is a conflict and enforcement is on.
+ * Called from the `subagent` tool's `execute.before` hook, so it can annotate
+ * the outgoing prompt. `args` is the tool input (`agent`, `description`,
+ * `prompt`, `background`, `sessionID`). Mutates `args.prompt` when there is a
+ * conflict and enforcement is on.
  */
 export const onDispatch = (sessionID, callID, args, settings) => {
   if (!settings?.board?.enabled || !sessionID || !callID) return;
@@ -68,7 +70,7 @@ export const onDispatch = (sessionID, callID, args, settings) => {
 
   const record = {
     id: callID,
-    agent: args?.subagent_type ?? 'unknown',
+    agent: args?.agent ?? args?.subagent_type ?? 'unknown',
     objective: truncate(args?.description, 80),
     state: 'running',
     background: args?.background === true,
@@ -90,45 +92,84 @@ export const onDispatch = (sessionID, callID, args, settings) => {
   board.records.set(callID, record);
 };
 
+/** The plain text of a V2 tool result (`{ content: [{ type: 'text', text }] }`). */
+export const resultText = (result) => {
+  if (typeof result === 'string') return result;
+  if (typeof result?.output === 'string') return result.output;
+  const content = Array.isArray(result?.content) ? result.content : [];
+  return content
+    .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('\n');
+};
+
+/** The child session a background dispatch reported, if it reported one. */
+const BACKGROUND_SESSION = /\(sessionID:\s*([^)\s]+)\)/;
+export const backgroundSessionID = (result, args) => {
+  const metadata = result?.metadata ?? {};
+  for (const key of ['sessionID', 'sessionId', 'childSessionID', 'jobId']) {
+    if (typeof metadata[key] === 'string' && metadata[key]) return metadata[key];
+  }
+  if (typeof result?.structured?.sessionID === 'string') return result.structured.sessionID;
+  // The tool's text says "working in the background (sessionID: …)".
+  const match = resultText(result).match(BACKGROUND_SESSION);
+  if (match) return match[1];
+  // Continuing an existing child names it in the input.
+  return typeof args?.sessionID === 'string' ? args.sessionID : undefined;
+};
+
 /**
  * Record a dispatch's outcome.
  *
- * Called from `tool.execute.after`. A background dispatch has not finished —
- * the tool returns as soon as the job is launched — so it stays `running` and
- * we keep the child session id from `metadata.jobId` to match up the
- * completion event later.
+ * Called from the `subagent` tool's `execute.after` hook with its V2 event:
+ * `{ status: 'completed', result }` or `{ status: 'error', error }`. A
+ * background dispatch has not finished — the tool returns as soon as the
+ * child starts — so it stays `running`, and the child session id is kept to
+ * match up the completion event later.
  */
-export const onDispatchResult = (sessionID, callID, output, settings) => {
+export const onDispatchResult = (sessionID, callID, outcome, settings) => {
   if (!settings?.board?.enabled) return;
 
   const record = boards.get(sessionID)?.records.get(callID);
   if (!record) return;
 
-  if (output?.metadata?.background) {
-    record.childSessionID = output.metadata.jobId;
+  if (outcome?.status === 'error') {
+    record.state = 'error';
+    record.endedAt = Date.now();
+    record.result = truncate(outcome.error?.message ?? 'failed');
     return;
+  }
+
+  const result = outcome?.result ?? outcome;
+  if (record.background) {
+    const child = backgroundSessionID(result, outcome?.input);
+    if (child) {
+      record.childSessionID = child;
+      return;
+    }
   }
 
   record.state = 'completed';
   record.endedAt = Date.now();
-  record.result = truncate(output?.output);
+  record.result = truncate(resultText(result));
 };
 
 /**
  * Mark a background dispatch finished, from a session lifecycle event.
  *
- * Returns whether anything changed. The event hook fires for every event
- * OpenCode publishes, and most of them are not lifecycle events at all, so
- * callers with work to do afterwards — projecting the board to the TUI
- * snapshot, say — need to know the difference.
+ * Returns whether anything changed, so callers with work to do afterwards —
+ * projecting the board to the TUI snapshot, say — can skip it when nothing did.
  */
+export const TERMINAL_EVENTS = {
+  'session.execution.succeeded': 'completed',
+  'session.execution.failed': 'error',
+  'session.execution.interrupted': 'cancelled',
+  'session.deleted': 'cancelled',
+};
+
 export const onSessionEvent = (type, sessionID) => {
   if (!sessionID) return false;
-  const terminal = {
-    'session.idle': 'completed',
-    'session.error': 'error',
-    'session.deleted': 'cancelled',
-  };
+  const terminal = TERMINAL_EVENTS;
   const state = terminal[type];
   if (!state) return false;
 
@@ -230,47 +271,58 @@ export const renderBoard = (sessionID) => {
 };
 
 /**
- * Attach the board snapshot to the last user message.
+ * Attach the board snapshot to the last user message of a model request.
  *
- * `messages.transform` receives no session id, so identity comes from the
- * messages themselves. Under the `latest` strategy any previous snapshot is
- * stripped first: the board is a live view, and leaving stale copies in history
- * both wastes context and invites the model to act on an old state.
+ * `messages` is the V2 `context` hook's transcript (`{ role, content }`), and
+ * `sessionID` comes from the hook event — V2 says which session a request is
+ * for, so identity no longer has to be guessed from the messages. Changes made
+ * here only affect the outgoing request, so under the `latest` strategy any
+ * snapshot already in the transcript — another plugin's, or one carried in
+ * from history — is stripped first: the board is a live view, and a stale copy
+ * invites the model to act on an old state.
  */
-export const injectBoard = (messages, settings) => {
+export const injectBoard = (messages, sessionID, settings) => {
   if (!settings?.board?.enabled || !Array.isArray(messages) || !messages.length) return false;
-
-  const sessionID = messages.find((m) => m?.info?.sessionID)?.info?.sessionID;
   if (!sessionID) return false;
 
-  const snapshot = renderBoard(sessionID);
+  const isSnapshot = (part) =>
+    part?.type === 'text' &&
+    typeof part.text === 'string' &&
+    part.text.trimStart().startsWith(BOARD_MARKER);
 
   if (settings.board.strategy === 'latest') {
-    for (const message of messages) {
-      if (!Array.isArray(message.parts)) continue;
-      message.parts = message.parts.filter(
-        (part) =>
-          !(
-            part.type === 'text' &&
-            typeof part.text === 'string' &&
-            part.text.startsWith(BOARD_MARKER)
-          ),
+    messages.forEach((message, index) => {
+      if (!Array.isArray(message?.content) || !message.content.some(isSnapshot)) return;
+      withContent(
+        messages,
+        index,
+        message.content.filter((part) => !isSnapshot(part)),
       );
-    }
+    });
   }
 
+  const snapshot = renderBoard(sessionID);
   if (!snapshot) return false;
 
-  const target = [...messages].reverse().find((m) => m?.info?.role === 'user' && m.parts?.length);
-  if (!target) return false;
+  let index = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role === 'user' && messages[i].content?.length) {
+      index = i;
+      break;
+    }
+  }
+  if (index === -1) return false;
 
+  const target = messages[index];
+  // Leading blank line: some providers join text parts with no separator.
+  const text = `\n\n${snapshot}`;
   if (
     settings.board.strategy !== 'latest' &&
-    target.parts.some((p) => p.type === 'text' && p.text === snapshot)
+    target.content.some((p) => p?.type === 'text' && p.text === text)
   ) {
     return false;
   }
 
-  target.parts.push({ ...target.parts[0], type: 'text', text: snapshot });
+  withContent(messages, index, [...target.content, { type: 'text', text }]);
   return true;
 };

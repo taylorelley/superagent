@@ -1,11 +1,12 @@
 /**
  * Logging and error containment.
  *
- * OpenCode runs plugin `config` hooks under `Effect.ignore`, which swallows
- * throws. A malformed user config would otherwise produce no agents and no
- * error — the plugin would look like it simply did nothing. So nothing in this
- * plugin is allowed to throw out of a hook: every hook body is wrapped in
- * `guard`, which logs loudly and returns a fallback instead.
+ * A throw out of a V2 hook fails the operation it intercepts — a model
+ * request, a tool call — and a throw out of a transform is logged by OpenCode
+ * and leaves that registration out, which looks exactly like the plugin
+ * simply doing nothing. So nothing in this plugin is allowed to throw out of a
+ * hook or a transform: every body is wrapped in `guard` / `guardSync`, which
+ * log loudly and return a fallback instead.
  */
 
 const PREFIX = '[superagent/opencode]';
@@ -34,6 +35,19 @@ export const error = (...args) => {
 export const guard = async (label, fn, fallback = undefined) => {
   try {
     return await fn();
+  } catch (err) {
+    error(`${label} failed:`, err && err.stack ? err.stack : err);
+    return fallback;
+  }
+};
+
+/**
+ * Synchronous `guard`, for transform callbacks — OpenCode requires those to
+ * be synchronous, so they cannot be wrapped in a promise.
+ */
+export const guardSync = (label, fn, fallback = undefined) => {
+  try {
+    return fn();
   } catch (err) {
     error(`${label} failed:`, err && err.stack ? err.stack : err);
     return fallback;
