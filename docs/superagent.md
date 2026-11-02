@@ -36,7 +36,7 @@ already ships; four are new to this layer.
 OpenCode's built-in `explore` (read-only reconnaissance) and `general` are used
 as-is rather than duplicated.
 
-Every specialist has `task` denied, which removes the tool from it entirely —
+Every specialist has `subagent` denied, which removes the tool from it entirely —
 so "you do not dispatch subagents" is structural rather than a request the
 prompt has to keep making. Reviewers and advisors also have `edit` denied. The
 orchestrator can only write under `.superagent/`.
@@ -53,9 +53,11 @@ skips that entry. To register the full roster alongside your own, set a prefix:
 
 ## Model routing
 
-This is the reason the roster exists. OpenCode's `task` tool has no `model`
-parameter, so the only way to run a reviewer on a different model from an
-implementer is for them to be different *agents*.
+This is the reason the roster exists. OpenCode 2's `subagent` tool does take a
+`model`, but its own description tells the model never to set one unless the
+user asks, and a guessed model ID fails the dispatch. So the reliable way to
+run a reviewer on a different model from an implementer is for them to be
+different *agents*, each with its model pinned in its definition.
 
 Out of the box every slot is unrouted, meaning each agent inherits your session
 model. You get role separation and context isolation, but not cost control.
@@ -75,8 +77,13 @@ Routing is per slot:
 ```
 
 Use whatever model IDs your authenticated providers expose — `opencode models`
-lists them. No preset ships with model IDs in it, because the right ones depend
-entirely on which providers you use.
+lists them — in `provider/model` form, optionally with a `#variant`
+(`anthropic/claude-opus-4-5#high`). No preset ships with model IDs in it,
+because the right ones depend entirely on which providers you use.
+
+OpenCode 2 agents have no temperature field, so the per-slot `temperature`
+settings are applied by the plugin's `context` hook to each request that agent
+makes — and only when nothing earlier in the request has already set one.
 
 An unrouted slot omits the model and inherits. If a slot names a model that is
 not available, the **model assignment** is dropped with a warning — the agent
@@ -107,7 +114,7 @@ warning rather than taking the layer down.
     "setDefaultAgent": true,  // make `superagent` OpenCode's default agent
     "models": { /* per slot, see above */ },
     "temperature": { "reviewer": 0.1, "oracle": 0.1 },
-    "permissionOverrides": {} // per agent, merged over the roster's own
+    "permissionOverrides": {} // per agent, applied after the roster's own rules
   },
   "council": { "enabled": false, "members": [], "minParticipants": 2 },
   "board": {
@@ -131,15 +138,26 @@ warning rather than taking the layer down.
 
 **Turning it off:** `{"preset": "solo"}`, or `SUPERAGENT_DISABLE=1`.
 
-`/preset <name>` selects one and `--persist` saves it, but **switching a preset
-does not take effect until OpenCode restarts.** Agent definitions are resolved
-into cached state at startup. The command says so rather than reporting a
-change that has not happened.
+`/preset <name> --persist` saves a preset and applies it: the plugin re-reads
+its configuration and reloads its agent and command registrations, so new
+dispatches and new sessions get the new roster. **A running session keeps the
+agent and model it already selected**, and the command says so rather than
+reporting a change that has not happened. OpenCode 2 runs one plugin instance
+per project location, so other projects you have open pick the preset up the
+next time their instance loads (or after `opencode service restart`). Without
+`--persist`, `/preset <name>` changes nothing and says so.
+
+`permissionOverrides` take a permission map per agent — `{ "oracle": {
+"webfetch": "deny", "edit": { "*": "deny", "notes/**": "allow" } } }` — or a
+list of OpenCode 2 rules (`[{ "action", "resource", "effect" }]`). OpenCode 1
+action names are translated: `task` → `subagent`, `bash` → `shell`, and
+`write`/`patch` → `edit`.
 
 ## The job board
 
-Every `task` dispatch is recorded, and a compact snapshot is injected into the
-session so the orchestrator can see what it launched. `/board` prints it.
+Every `subagent` dispatch is recorded, and a compact snapshot is injected into
+the session's model requests so the orchestrator can see what it launched.
+`/board` prints it.
 
 Its real job is preventing concurrent writes to the same file, which is the
 failure that makes parallel dispatch worse than serial — both dispatches
@@ -201,72 +219,25 @@ only the routed (non-inherit) slots are listed, since a pinned model is the
 part a reader cannot guess. The `+N collapsed` line says how many are hidden.
 Clicking the header, or the `+N collapsed` line, toggles this state — no
 config edit or restart needed; `{"tui": {"agents": {"expanded": true}}}` in
-`superagent.json` only sets the *starting* state now. Dispatches are always
+`superagent.json` only sets the *starting* state. Dispatches are always
 expanded — they are the live section — and both lists' `+N more` lines are
-clickable too, in principle revealing one more page (the same row cap again)
-per click. **What a click actually shows on screen is weaker than that,
-though** — see "Staying live" just below: a click only flips this state and
-asks for a repaint, and that repaint runs into the same confirmed
-`createElement`-outside-a-render-pass failure a poll tick does whenever it
-fires from outside the host's own `sidebar_content` call. So a click is not
-guaranteed to visibly expand anything by itself; the new state becomes
-visible whenever the host next re-renders the panel for its own reasons
-(e.g. switching views), the same as any other data change.
+clickable too, revealing one more page (the same row cap again) per click.
 
-### Staying live: why a poll alone was not enough, and why patching in place doesn't work either
+### Staying live
 
-The panel polls its snapshot file once a second and used to call OpenCode's
-`renderer.requestRender()` when it changed, on the assumption that this would
-make the host re-run `sidebar_content` and pick up the new data. In practice
-it did not: `requestRender()` repaints whatever node tree the host already
-has, but the host does not call `sidebar_content` again after the first
-mount on its own — the panel only refreshed after something else forced a
-remount, such as switching to a subagent's view and back.
+OpenCode 2 renders a plugin's slot claim inside Solid's ownership tree, and
+OpenTUI finds its renderer through Solid context. So the panel's root is filled
+with a *reactive* `insert(root, () => …)`: the snapshot poll (once a second,
+re-parsed only when the file's mtime moves) and every click bump one Solid
+signal, and Solid re-runs that insert inside the slot's own owner, where
+creating elements is legal. The panel repaints in place, immediately.
 
-An earlier version of this plugin tried to work around that by keeping one
-root node alive for the life of the registration and patching its child in
-place — unmounting the old render and mounting the new one — from the poll
-tick and from clicks, on the theory that `@opentui/solid` would expose some
-`insert()`-adjacent removal primitive. **Both halves of that theory are now
-confirmed false against a real installed OpenCode + `@opentui/solid`:**
-
-- The module exports none of `remove`/`removeChild`/`removeNode`/`unmount`.
-  It is a Solid.js fine-grained reactive renderer (`RendererContext`,
-  `createDynamic`, `Slot`/`SlotRenderable`, `effect`, `memo` are among its real
-  exports) — node lifetime there is owned by Solid's reactive graph and
-  disposed through it, not removed by an imperative call. `elementFactory`'s
-  `unmount` is therefore always `null` in production.
-- More fundamentally, `createElement` (and so `h.box`/`h.text`) throws `Error:
-  No renderer found` when called from anywhere outside the synchronous call
-  stack the host uses to invoke `sidebar_content` itself. A poll tick and a
-  click handler both run later, outside that stack, so *any* attempt to
-  rebuild the tree from either one fails — not merely "degrades to no patch,"
-  but throws. This was previously undocumented; it explains why the panel
-  never updated live even though nothing visibly crashed (the exception was
-  uncaught inside a bare `setInterval` callback and swallowed by the host
-  runtime rather than surfaced).
-
-Because of the second point, keeping a long-lived root across separate
-`sidebar_content` invocations was actively harmful, not just ineffective: a
-genuine remount (e.g. returning from a subagent's view) *does* run inside a
-valid render pass, but the panel kept handing the host back the *original*
-root object from the very first mount — a node whose underlying reactive
-scope had likely already been torn down when the host displayed the
-intervening view. Re-inserting a disposed node rendered nothing, which is why
-the panel disappeared on return instead of refreshing.
-
-The fix: `repaint()`'s tree-building and patch call are wrapped so a throw
-from outside a render pass degrades to "nothing happened this tick" instead
-of an uncaught exception (`.opencode/tui/superagent-tui.js`), and
-`sidebar_content` now builds a **fresh** `createRootRepainter` (and so a
-fresh root) on every invocation instead of reusing one across the whole
-registration's lifetime. There is no true out-of-band live push against this
-host — that would require binding the panel's dynamic values through Solid's
-own reactivity (e.g. signals read by an effect) rather than the raw
-`createElement`/`insert` calls this module uses, which is a larger change —
-but the panel now always shows this project's *current* data whenever the
-host does re-render it, and can no longer throw doing so or go blank from a
-stale node.
+That replaces the OpenCode 1 situation, where the panel could only refresh when
+the host happened to re-invoke `sidebar_content` (creating elements from a poll
+tick threw `No renderer found`, and `@opentui/solid` has no imperative removal
+export to patch a tree with). Confirmed against OpenCode 2.2.5 in a real
+terminal: a second dispatch moved the Dispatches line from `0/1` to `0/2`, and
+a background dispatch settled to `completed (bg)`, with no view switch.
 
 Dispatch states carry glyphs so an outcome reads at a glance: `●` running,
 `✓` completed, `✗` error, `○` cancelled.
@@ -277,85 +248,70 @@ The Dispatches section can tell you why it is empty:
 |---|---|
 | `no snapshot yet — nothing dispatched` | No dispatch has been recorded yet in this project. |
 | `snapshot from a different plugin version` | The snapshot file is from an older Superagent copy (snapshot format mismatch). |
-| `server vX ≠ panel vY` | The server plugin and the TUI plugin are different versions — the sidebar cannot trust the server's data. Point `opencode.json` and `tui.json` at the same source. |
+| `server vX ≠ panel vY` | The snapshot was written by a different Superagent version than the panel's — usually a server that has not restarted since an update. Run `opencode service restart`. |
 | `none this session` | The bridge works; this session simply has no dispatches. |
 
 ### Registering it
 
-The panel is a **second plugin entry point**, and OpenCode configures the two
-separately. `opencode.json` is read by the server, `tui.json` by the TUI, so
-Superagent has to be listed in both:
-
-```jsonc
-// ~/.config/opencode/opencode.json
-{ "plugin": ["superagent@git+https://github.com/taylorelley/superagent.git"] }
-
-// ~/.config/opencode/tui.json
-{ "plugin": ["superagent@git+https://github.com/taylorelley/superagent.git"] }
-```
-
-Listing it in only `opencode.json` is the supported, complete setup for
-everything else in this document — you simply get no panel.
+Nothing to do. The panel is the package's `./tui` export, and OpenCode 2 loads
+the TUI parts of the plugins its server loads — the one `plugins` entry in
+`opencode.json` covers both. (OpenCode 1 needed a second entry in `tui.json`;
+remove it.)
 
 ### How it is built
 
-Three constraints shape it, all verified below:
-
-- **It is a separate module.** A plugin module default-exports either `server()`
-  or `tui()`, never both, and the TUI entry is resolved from
-  `exports["./tui"]` in `package.json` — `.opencode/tui/superagent-tui.js`.
-- **It renders through the host's OpenTUI, not its own.** Superagent has no
-  dependencies, and a second copy of the renderer would be wrong even if it had.
-  The panel imports the host's instance through the virtual specifier
-  `opentui:runtime-module:%40opentui%2Fsolid`. If that import fails the panel is
-  not registered, and nothing else is affected.
-- **The board reaches it through a file.** The two entries are separate module
-  graphs in separate processes, so `board.js`'s in-memory ledger is not visible
-  from the panel. Each change is projected to
-  `~/.config/opencode/superagent/tui-<hash-of-project-dir>.json`, which the
-  panel polls once a second. Only the board crosses: the version, preset and
-  roster are recomputed on the TUI side from the same modules the plugin uses,
-  so there is nothing to keep in sync.
-- **It rebuilds fresh on every host-driven render rather than patching
-  in place.** See "Staying live" above — patching a long-lived root from a
-  poll tick or a click is confirmed impossible against the real host
-  (`createElement` requires an active render pass, and the module exposes no
-  removal primitive to patch with anyway), so the panel now builds a new root
-  each time the host invokes `sidebar_content`, and simply cannot push a
-  refresh in between those invocations.
-- **Clicks use OpenTUI's own event props, not an OpenCode API.** OpenCode's
-  plugin API has no click/keybind surface (a `TuiWidget`/`onActivate`/`keybind`
-  proposal exists only as an open, unimplemented feature request —
-  `anomalyco/opencode#28902`). But OpenTUI's element primitives natively
-  support `onMouseDown` and friends, and `elementFactory`'s `element()`
-  forwards every prop verbatim via `setProp` — so the Agents header and both
-  `+N more` lines simply carry an `onMouseDown` prop, same as any other. Not
-  yet confirmed the live host actually delivers the event — see below.
+- **It is the package's TUI part.** `exports["./tui"]` in `package.json` points
+  at `.opencode/tui/superagent-tui.js`, a V2 TUI plugin — a default-exported
+  `{ id: "superagent.tui", setup(context) }` that claims the
+  `sidebar.content` slot through `context.ui.slot`. The slot's input carries
+  the `sessionID` being shown, so the panel always describes the session on
+  screen.
+- **It renders through the host's OpenTUI and Solid, not its own.** Superagent
+  has no dependencies, and a second copy of the renderer would be wrong even if
+  it had. The panel imports the host's instances through the virtual
+  specifiers `opentui:runtime-module:%40opentui%2Fsolid` and
+  `opentui:runtime-module:solid-js` (the host registers both, plus
+  `@opentui/core` and `@opencode/plugin/tui`, for every plugin, including one
+  installed under `node_modules`). If either import fails the panel is not
+  registered, and nothing else is affected.
+- **The roster comes from the host.** The Agents section lists the roster
+  entries present in `context.data.location.agent.list()`, so a name that was
+  skipped for a collision is not claimed as ours.
+- **The board reaches it through a file.** The server and TUI parts are
+  separate module graphs — and with a remote server, separate machines — so
+  `board.js`'s in-memory ledger is not visible from the panel. Each change is
+  projected to `~/.config/opencode/superagent/tui-<hash-of-project-dir>.json`,
+  which the panel polls. Only the board crosses: the version, preset and
+  roster are recomputed on the TUI side from the same modules the plugin uses.
+- **Clicks use OpenTUI's own event props.** OpenTUI's element primitives
+  support `onMouseDown`, and `elementFactory` forwards every prop verbatim via
+  `setProp`, so the Agents header and both `+N more` lines carry an
+  `onMouseDown` prop.
+- **The update toast.** When the snapshot reports a newer version, the panel
+  shows one `context.ui.toast` per TUI process.
 
 ## Background dispatch
 
-Off unless you start OpenCode with it:
-
-```bash
-OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true opencode
-```
-
-With it on, the orchestrator dispatches independent work in parallel and is
-notified as each finishes. Without it, the routing table tells it to issue
-several `task` calls in one message instead, and the one-writer-per-file rule
-still applies. A plugin cannot enable this itself.
+Built in. OpenCode 2's `subagent` tool takes `background: true`, returns as
+soon as the child session starts, and notifies the parent when it finishes, so
+the orchestrator dispatches independent work in parallel. (OpenCode 1 gated
+this behind `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS`; that variable no
+longer does anything.) The one-writer-per-file rule still applies. To send a
+running or finished subagent follow-up instructions, the orchestrator calls
+`subagent` again with the `sessionID` it returned.
 
 ## Parallel dispatch
 
 When a plan declares independent tasks (its Task Order & Dependencies table —
-see `skills/writing-plans`) and background subagents are enabled, SDD executes
+see `skills/writing-plans`), SDD executes
 each wave concurrently: every task gets its own git worktree at
 `.worktrees/<plan-basename>/t<N>` on its own branch, is dispatched with
 `background: true`, and the controller merges each branch back into the
 feature branch after its review passes. A merge conflict means the plan's
 disjoint-files claim was wrong — surfaced loudly as a plan defect rather than
-a silent overwrite. Without the flag, a wave of one, or no table, SDD runs
-serially as before.
+a silent overwrite. With a wave of one, or no table, SDD runs serially as
+before. The `subagent` tool has no working-directory parameter, so each wave
+implementer is told its worktree path in its prompt.
 
 If worktree creation fails (sandbox/permission), SDD falls back to serial
 execution in place, with a ledger note.
@@ -415,9 +371,10 @@ commands.
 
 ## Updates
 
-Once per OpenCode process — not once per session, so a dispatch's child
-sessions don't repeat it — the plugin asks GitHub whether a newer Superagent
-exists: a release first (`GET /repos/taylorelley/superagent/releases/latest`),
+Once per plugin instance, on the first session it sees — not once per
+session, so a dispatch's child sessions don't repeat it, and never during
+startup, so a slow network cannot delay OpenCode — the plugin asks GitHub
+whether a newer Superagent exists: a release first (`GET /repos/taylorelley/superagent/releases/latest`),
 falling back to `package.json` on the default branch if this repo has not cut
 one yet. The result is cached to
 `<configDir>/superagent/update-check.json` and reused for `updateCheck.intervalHours`
@@ -429,22 +386,26 @@ When a newer version is found:
 
 - The sidebar panel (`## The sidebar panel` above) gains a line —
   `⬆ vX.Y.Z available — run /update install` — directly under the version
-  header. This is the one channel independently confirmed working in this
-  codebase.
-- The plugin also makes a best-effort `client.tui.showToast(...)` call. This
-  API is not yet confirmed against this project's own pinned OpenCode source
-  (see "Still unverified" below) — treat the panel line as the reliable
-  notice and the toast as a bonus that may or may not appear.
+  header.
+- The TUI shows one toast (`context.ui.toast.show`) per TUI process. The V2
+  server plugin context has no toast API, so the toast comes from the panel,
+  which reads the same snapshot.
 
 `/update` reports the installed version, the latest known version, and when it
 was last checked, reading only the cache — it never blocks on a fetch of its
-own. `/update install` shells out to `git pull --ff-only` (when the install is
-a git checkout) or `npm install superagent@git+https://github.com/taylorelley/superagent.git --prefix <configDir>`
-(OpenCode's own git-spec install path, see `.opencode/INSTALL.md`) — the same
-two paths documented there, so a missing `git`/`npm` degrades to reporting the
-exact manual command rather than failing silently. Like `/preset`, it says
-plainly that **the update does not take effect until OpenCode restarts** —
-plugin code is resolved once at startup.
+own. `/update install` shells out, in order of preference, to:
+
+1. `git pull --ff-only`, when the installed package is a git checkout;
+2. `opencode plugin update <target>`, when Superagent is a package target in
+   your `plugins` (`github:taylorelley/superagent`, a version spec, …) — the
+   target is read from your OpenCode config;
+3. `npm install superagent@git+https://github.com/taylorelley/superagent.git --prefix <configDir>`,
+   the fallback documented in `.opencode/INSTALL.md`.
+
+A missing tool degrades to reporting the exact manual command rather than
+failing silently. It says plainly that **the update does not take effect until
+the service restarts** (`opencode service restart`) — plugin code is imported
+once, when the plugin loads.
 
 Turn the check off with `{"updateCheck": {"enabled": false}}`, or with
 `SUPERAGENT_DISABLE=1`, which turns off everything.
@@ -453,8 +414,10 @@ Turn the check off with `{"updateCheck": {"enabled": false}}`, or with
 
 | Feature | If unavailable | Behaviour |
 |---|---|---|
-| Background dispatch | flag not set | Routing table switches to parallel-in-one-message; nothing errors |
-| Model routing | model not in any provider | Key dropped with a warning; agent inherits the session model |
+| Background dispatch | a child session reports no id | The board records the dispatch as completed rather than leaving it running forever |
+| Model routing | not `provider/model`, or not in any provider | Model dropped with a warning; agent inherits the session model |
+| A skill ID | already taken by a personal or project skill | Yours is kept; ours is skipped |
+| The sidebar panel | the host's OpenTUI or Solid cannot be imported | Panel not registered; everything else unaffected |
 | An agent name | already taken by the user | Yours is kept; ours is skipped with a warning |
 | Council | fewer than 2 members | `/council` explains how to configure it instead of dispatching |
 | Council | a member fails to answer | Synthesis proceeds and names the failure; under 2 answers is reported inconclusive |
@@ -465,10 +428,12 @@ Turn the check off with `{"updateCheck": {"enabled": false}}`, or with
 ## Troubleshooting
 
 **The agents don't appear.** Check the plugin loaded at all:
-`opencode run --print-logs "hello" 2>&1 | grep -i superagent`. Note that
-plugin-registered agents surfacing in `opencode agent list` is subject to a
-[known caching-order bug](https://github.com/code-yeongyu/oh-my-openagent/issues/1320)
-in OpenCode; they can work in-session while missing from that listing.
+`opencode plugin list`, then
+`opencode run --standalone --print-logs "hello" < /dev/null 2>&1 | grep -iE 'superagent|plugin'`
+(a `failed to load plugin` line names the cause). `opencode debug agents`
+prints every agent the server registered, with its permission rules. Make sure
+the entry is under `plugins` — OpenCode 2 ignores a V1 `plugin` array's
+implementation.
 
 **Warnings about a name collision.** You already have an agent with that name.
 Set `agents.prefix`.
@@ -476,8 +441,8 @@ Set `agents.prefix`.
 **More detail.** `SUPERAGENT_DEBUG=1`.
 
 **The Dispatches section stays empty.** If it names a version mismatch
-(`server v… ≠ panel v…`), the server and TUI plugin copies differ — list the
-same source in `opencode.json` and `tui.json`, restart, and re-dispatch. If it
+(`server v… ≠ panel v…`), the snapshot was written by a server still running an
+older copy — `opencode service restart`, and re-dispatch. If it
 says `no snapshot yet`, dispatch something; if it says `none this session`,
 the bridge works and this session has simply not dispatched. Run with
 `SUPERAGENT_DEBUG=1` for the panel's per-render log line (file, mtime, session,
@@ -485,283 +450,92 @@ record count, state).
 
 ---
 
-## Verified behaviour of the OpenCode plugin API
+## How the OpenCode 2 plugin API is used
 
-Everything below was read out of `sst/opencode` at commit `14b37df`, not
-inferred from documentation. Several of these contradict the obvious design, so
-they are recorded with their source locations for whoever revisits this.
+Superagent targets the [OpenCode 2 plugin format](https://opencode.ai/v2/docs/plugins/).
+Each part is a plain default-exported `{ id, setup }` object — what
+`Plugin.define` from `@opencode/plugin` returns, since `define` is the identity
+function — so the package keeps its zero-dependency rule.
 
-### Plugin `config` mutations reach agent assembly
+| Concern | OpenCode 1 | OpenCode 2 (this plugin) |
+|---|---|---|
+| Entry | `export const SuperagentPlugin = async ({ client, directory }) => hooks` | `export default { id: "superagent", setup(ctx) }` |
+| Skills | push `skills/` onto `config.skills.paths` | `ctx.skill.transform` adds each `SKILL.md`; the directory is watched and `ctx.skill.reload()` re-reads it |
+| Agents | assign `config.agent[name]` | `ctx.agent.transform` → `editor.update(name, …)` on an unused ID; `editor.default(…)` |
+| Agent prompt / permissions | `prompt`, `permission: { tool: effect }` | `system`, `permissions: [{ action, resource, effect }]` (lowered by `lib/permissions.js`) |
+| Agent temperature | `temperature` | no field; set per request in the `context` hook |
+| Commands | `config.command[name] = { template }` + `command.execute.before` | `ctx.command.transform` → `editor.add({ name, execute })`; `execute` submits the expansion with `ctx.session.prompt` |
+| Bootstrap and board | `experimental.chat.messages.transform` | `ctx.session.hook("context", …)` editing `event.messages` |
+| Dispatch tracking | `tool.execute.before/after` on `task` | `ctx.tool.hook("execute.before" / "execute.after")` on `subagent` |
+| Background completion | `event` hook, `session.idle` / `session.error` | `ctx.event.subscribe` on `session.execution.succeeded/failed/interrupted`, `session.deleted` |
+| Sidebar panel | `tui()` + `api.slots.register({ sidebar_content })`, listed in `tui.json` | `{ id, setup(context) }` + `context.ui.slot({ append: "sidebar.content" })`, loaded from the same `plugins` entry |
+| Update toast | `client.tui.showToast` (unverified) | `context.ui.toast.show` from the TUI part |
 
-`Config.get()` returns `InstanceState.use(state, (s) => s.config)` — the *same
-object reference* on every call within an instance
-(`packages/opencode/src/config/config.ts:606`). The plugin service runs each
-plugin's `config` hook against that object
-(`packages/opencode/src/plugin/index.ts:243`), and `Agent.state` yields
-`Plugin.Service` before it reads `config.get()`
-(`packages/opencode/src/agent/agent.ts:93,100`).
+Three properties of V2 shaped the port:
 
-So a plugin that writes `config.agent[name]` in its `config` hook is seen by
-agent assembly. This is the same mechanism the skills-path registration has
-always relied on.
+- **Transforms are replayed.** A registry read rebuilds the registry by
+  re-running every transform on a fresh value. So every transform here is
+  synchronous and I/O-free (prompts and skills are read once at setup), and
+  reports what it did through its return value — conflicts are logged once per
+  process, not once per replay.
+- **The command editor can only add, and a later add shadows.** So
+  `ctx.command.list()` is read before registering, and a name the user already
+  has is skipped and reported, the same as an agent collision.
+- **The agent editor can set the default agent but not read it.** So the
+  plugin reads `default_agent` from the user's OpenCode config files
+  (`lib/opencode-config.js`) and only selects `superagent` when none is set.
 
-### A `config` hook throw is swallowed
+### Verified against OpenCode 2.2.5
 
-The hook is invoked under `Effect.ignore`
-(`packages/opencode/src/plugin/index.ts:249`). It logs through
-`Effect.logError` first, but execution continues and the plugin's registrations
-are simply absent. A malformed user config must therefore never throw — it must
-log and fall back to defaults. Every hook in this plugin is wrapped in
-`guardHook` (`.opencode/lib/log.js`) for exactly this reason.
+Run on Linux against `opencode` 2.2.5 (installed with
+`curl -fsSL https://opencode.ai/v2/install | bash`), in an isolated home,
+with an OpenAI-compatible mock provider that scripts tool calls and records
+every request body — so what the model receives is checked byte for byte.
 
-### Agent entries are assigned, not merged, by the plugin
-
-Agent assembly merges config entries field-by-field onto built-ins
-(`packages/opencode/src/agent/agent.ts:267-294`), but that happens *after* the
-plugin hook. From the plugin's side `config.agent` is a plain object, so
-`config.agent[name] = {...}` overwrites whatever a user put there.
-
-Superagent therefore never writes a key that already exists — a user's own
-`implementer` wins, and Superagent logs a warning and skips.
-
-### Omitting `model` is how an agent inherits the session model
-
-`if (value.model) item.model = Provider.parseModel(value.model)`
-(`agent.ts:281`) — falsy means untouched, and the task tool then falls back to
-the parent's model. There is no fallback to compute: an unconfigured slot simply
-omits the key. When a *configured* model is unavailable, delete the key rather
-than substitute a different model.
-
-### `permission` keys are tool names, and denying one hides the tool
-
-`Permission.fromConfig` accepts any key and treats it as a tool-name pattern
-(`packages/opencode/src/permission/index.ts:186`). `disabled()` then removes a
-tool from the agent entirely when the last matching rule is `pattern: "*"` with
-`action: "deny"` (`index.ts:204-214`).
-
-This is stronger than it looks. `permission: { task: "deny" }` does not merely
-refuse a dispatch at call time — the `task` tool is not in the agent's tool list
-at all. The "You Do Not Dispatch Subagents" instruction that
-`implementer-prompt.md` and `task-reviewer-prompt.md` currently have to *ask*
-for becomes structurally guaranteed.
-
-Rule order matters: `merge` is `flat()` and matching uses `findLast`
-(`index.ts:200,210`), and the plugin's rules are merged after the defaults
-(`agent.ts:293`), so the plugin's rules win. A scoped pair like
-`edit: { "*": "deny", "**/.superagent/**": "allow" }` keeps the `edit` tool
-visible while confining it, because the last matching rule is not `pattern: "*"`.
-
-### `task` has no `model` parameter
-
-Parameters are `description`, `prompt`, `subagent_type`, `task_id?`,
-`command?`, `background?` (`packages/opencode/src/tool/task.ts:43-62`). The
-child model is the parent's unless the *agent* pins one.
-
-Consequence: registered agents are the only model-routing mechanism OpenCode
-offers, and `skills/subagent-driven-development/SKILL.md` §Model Selection —
-"always specify the model explicitly when dispatching" — is unimplementable here
-as written. The orchestrator's job is to translate model selection into *agent*
-selection. `task_id` exists, so SDD's "resume the original implementer"
-fix-rounds map natively.
-
-### Background dispatch needs no polling, and needs no degrade shim
-
-When `experimentalBackgroundSubagents` is off, the `background` parameter is
-stripped from the tool's JSON schema outright
-(`task.ts:351-355`), so the model cannot pass it. The planned "strip
-`background: true` when the flag is off" hook is unnecessary.
-
-When it is on, the tool's own output says: *"You will be notified automatically
-when it finishes. DO NOT sleep, poll for progress, ask the task for status"*
-(`task.ts:30-34`). Completion is injected back into the parent by
-`BackgroundJob.notify()`. A wake scheduler would contradict the tool's own
-instructions, so Superagent does not ship one.
-
-`tool.execute.after` carries `metadata.jobId` (the child session id) and
-`metadata.background: true` for background dispatches; foreground returns
-`state: "completed"` with the result text (`task.ts:257-334`). That is what the
-job board keys on.
-
-### `default_agent` throws when it does not resolve
-
-`agent.ts:330-334` throws if the named default agent is missing, is a
-`subagent`, or is hidden. Since Superagent skips registration on a name
-collision, it must only set `default_agent` when it actually registered the
-orchestrator — otherwise a user with their own `superagent` agent gets a hard
-startup failure.
-
-Valid `mode` values are `subagent`, `primary`, `all` (`agent.ts:38`).
-
-### `messages.transform` receives no session id, and also runs during compaction
-
-The hook is triggered with an empty input object from two places:
-`packages/opencode/src/session/prompt.ts:1255` and
-`packages/opencode/src/session/compaction.ts:379`. Session identity has to come
-from the messages themselves (`info.sessionID`), and anything injected here will
-also be seen by the compaction summarizer.
-
-### TUI plugins are configured in `tui.json`, not `opencode.json`
-
-The TUI resolves its own plugin list from files named `tui.json`/`tui.jsonc` —
-the global config dir, `OPENCODE_TUI_CONFIG`, project files, and any `.opencode`
-directory on the way up (`packages/opencode/src/config/tui.ts:183-210`). The
-result is passed to the TUI plugin host, which uses it verbatim:
-`config.plugin_origins ?? (await TuiConfig.pluginOrigins())`
-(`packages/opencode/src/plugin/tui/runtime.ts`). An empty list is not nullish, so
-a plugin listed only in `opencode.json` is loaded by the server and never by the
-TUI.
-
-This is silent. The TUI host reports failures with `console.error`, which the
-running terminal UI paints over, and a plugin that is never even considered
-reports nothing at all.
-
-### A TUI entry is a separate module, resolved from `exports["./tui"]`
-
-`readV1Plugin` throws if a module exports both `server` and `tui`
-(`packages/opencode/src/plugin/shared.ts:293`), and `resolvePackageEntrypoint`
-reads `exports["./${kind}"]` — falling back to `main` only for `server`
-(`shared.ts:103-113`). A package with no `./tui` export has no TUI entry.
-
-Path-source plugins must also export an `id`; npm and git specs fall back to the
-package name (`shared.ts:resolvePluginId`).
-
-### The TUI hands plugins its own OpenTUI through a virtual specifier
-
-The TUI host calls `ensureRuntimePluginSupport`, which registers a Bun plugin
-mapping `@opentui/solid`, `@opentui/core`, `solid-js` and friends onto virtual
-`opentui:runtime-module:<encoded specifier>` ids
-(`@opentui/solid/scripts/runtime-plugin-support-configure.js`).
-
-A **bare** `import("@opentui/solid")` does not reach it from an installed
-plugin: the rewrite defaults are `nodeModulesRuntimeSpecifiers: true`,
-`nodeModulesBareSpecifiers: false` (`@opentui/core/runtime-plugin.js:46`), so
-bare specifiers inside `node_modules` are left to normal resolution and fail
-unless the plugin ships its own copy — which is how plugins that depend on
-`@opencode-ai/plugin` (peer deps `@opentui/*`) get one. Importing the virtual id
-works from anywhere, and is what Superagent does.
-
-### Slot functions receive the slot context, not the slot props
-
-`TuiHostSlotMap` declares `sidebar_content: { session_id: string }`, but the
-argument a registered slot function is actually called with is the
-`TuiSlotContext` — `{ theme }`. The current session id has to come from
-`api.route.current.params.sessionID` instead.
-
-### Verified against a live OpenCode
-
-Run against `opencode-ai@1.18.17` on Linux, in an isolated `OPENCODE_CONFIG_DIR`.
-
-**The roster registers and is usable.** All ten agents appear in
-`opencode agent list` with the right modes (`superagent` primary, the rest
-subagents), `default_agent` resolves to `superagent`, all three commands
-register, and the plugin loads with no errors. The
-[caching-order bug](https://github.com/code-yeongyu/oh-my-openagent/issues/1320)
-seen in another agent-registering plugin did not reproduce on this version.
-
-**Permissions apply as designed.** Read back from the running instance:
-`implementer` carries `task deny *`; `oracle` carries `edit deny *` and
-`task deny *`; `superagent` carries `edit * deny` followed by the two
-`.superagent/**` allows, in that order — so its edit tool stays visible but
-confined, which is what the last-matching-rule semantics require.
-
-**A multi-file plugin survives the documented install.** Installing via
-`superagent@git+https://github.com/…#<branch>` registers all ten agents, so
-`package.json` `main` → entry → relative imports into `.opencode/lib/` resolve
-correctly through OpenCode's plugin installer.
-
-**The opt-out works.** With `{"preset": "solo"}`, `opencode agent list` shows
-only OpenCode's built-ins.
-
-**The collision guard works.** With a user-defined `implementer` in
-`opencode.json`, that agent survives with its own description and prompt, the
-other nine still register, `default_agent` is still set, and the warning names
-`agents.prefix` as the fix.
-
-**The acceptance test passes.** In a clean session:
-
-```text
-$ opencode run "Let's make a react todo list"
-> superagent · deepseek-v4-flash-free
-
-→ Skill "brainstorming"
-Using **brainstorming** to explore requirements and design before implementation
-…
-[✓] Explore project context
-[•] Ask clarifying questions (one at a time)
-[ ] Propose 2-3 approaches with trade-offs
-…
-This is a fresh, empty repo … Before I propose a design, a few questions (one at a time).
-```
-
-The orchestrator is the agent running the session, `brainstorming` triggered
-before anything was written, and no code was produced.
-
-**Dispatch and the board work.** A dispatch to `librarian` ran, and a probe
-plugin observing the message array confirmed the routing table is present on
-every turn and a job-board snapshot appears on the root session after a
-dispatch — and does *not* appear on the child session.
-
-**The sidebar panel renders.** Run against `opencode-ai@1.18.18`, with the
-package registered in both `opencode.json` and `tui.json`. The panel appears in
-the session sidebar showing `Superagent v0.1.0`, the active preset, the
-subsystem line, the roster capped at eight with `+2 more`, and — from a snapshot
-written for that session — running dispatches first with their objectives and
-`owns` lines, finished ones on a single line, and `+1 more`. The virtual
-`opentui:runtime-module:` import resolved; a bare `@opentui/solid` import
-failed with `Cannot find module`, from a plugin both inside and outside a
-`node_modules` path.
-
-That last test also produced a finding. Asked about the board, a model replied
-that it "is user-supplied text, not injected context" and declined to use it —
-because the snapshot is appended to the last user message, which is the only
-place the transform hook offers. The board now identifies itself as
-plugin-maintained in its header. That wording change has not been re-tested
-against a live model.
+- **The plugin loads from a local package directory, from a symlink in
+  `~/.config/opencode/plugins/`, and as a `github:` package target**
+  installed by `opencode plugin add`.
+- **The roster registers.** `opencode debug agents` lists all ten agents with
+  the intended modes and system prompts; `superagent` is the default agent.
+  Permission rules read back as intended: workers end with
+  `subagent * deny`, reviewers and advisors with `edit * deny`, `librarian`
+  with `webfetch * allow`, and `superagent` with `edit * deny` followed by the
+  two `.superagent/**` allows.
+- **Skills register and load.** The system prompt advertises every Superagent
+  skill; the real `skill` tool loads `brainstorming` from the plugin-registered
+  entry, with its base directory set to `skills/brainstorming`. A personal or
+  project skill with the same ID wins. A skill added while the service is
+  running is picked up without a restart (`tests/opencode/test-priority.sh`).
+- **The bootstrap is injected** as the first part of the first user message of
+  every agent-loop request, routing table and tool map included, and into
+  subagent sessions too.
+- **Per-slot temperature applies**: a dispatch to `oracle` sent
+  `temperature: 0.1`; the orchestrator's requests sent none.
+- **Dispatch tracking works** for foreground and background `subagent` calls,
+  including a failed call (recorded as `error`). A background dispatch stayed
+  `running` until its child's `session.execution.succeeded` event settled it.
+  The job board appears in the parent session's follow-up requests.
+- **Commands work.** `/preset`, `/board` and `/update` are listed by
+  `command.list` (`/council` only with the council preset), and
+  `session.command` runs them: the expansion arrives as the next user prompt.
+  `/preset solo --persist` removed the roster and `/board` from that location
+  without a restart.
+- **The sidebar panel renders and stays live** in the real TUI (driven in
+  `tmux`): it showed the version, preset, roster summary and dispatches, and
+  updated in place as a second, background dispatch ran and settled.
 
 ### Still unverified
 
-- Whether multiple `task` calls in a single assistant message run concurrently.
-  This only affects the wording of the degrade advice when background dispatch
-  is off.
-- Whether `@opencode-ai/plugin` (and so zod) is importable from an installed
-  plugin. This gates a possible future council *tool*; the shipped
-  command-and-agent implementation does not need it.
-- Behaviour on Windows, where another agent-registering plugin has a
-  [reported failure](https://github.com/code-yeongyu/oh-my-openagent/issues/3219).
-- Model routing with real per-slot models. The live testing ran with every slot
-  inheriting, since the test environment has one usable provider.
-- ~~Whether the live OpenCode TUI host re-invokes a plugin's `sidebar_content`
-  slot function after the first mount~~ **Confirmed**, by installing a real
-  OpenCode (`npm install opencode-ai`) and its bundled `@opentui/solid`, and
-  driving the TUI in a scripted terminal: it does not re-invoke on its own —
-  `renderer.requestRender()` alone does not either — only something that
-  forces a remount does. See "Staying live" above.
-- ~~Whether the OpenTUI module... exposes a node-removal function under any of
-  `remove`/`removeChild`/`removeNode`/`unmount`~~ **Confirmed false**: the real
-  module's exports were dumped directly (`Object.keys` on the imported
-  module) and contain none of them. It is a Solid.js reactive renderer
-  (`RendererContext`, `createDynamic`, `effect`, `memo`, …); disposal is a
-  property of Solid's reactive graph, not an exported function. `elementFactory`'s
-  `unmount` is `null` in every real installation. See "Staying live" above —
-  this also surfaced a second, previously unknown failure: `createElement`
-  itself throws `Error: No renderer found` when invoked outside the host's own
-  synchronous `sidebar_content` call (confirmed via a live stack trace), which
-  is why the old poll-driven patch attempt never worked and why the panel
-  could go blank on a real remount. Both are fixed in
-  `.opencode/tui/superagent-tui.js`.
-- Whether OpenTUI's `onMouseDown` prop, attached via the same virtual import,
-  is actually delivered to a plugin-contributed `sidebar_content` slot by a
-  live OpenCode TUI host — the Agents header and the `+N more` lines carry the
-  prop, but no click has been confirmed to reach it outside a terminal.
-- Whether `client.tui.showToast({ body: { message, variant } })` exists and
-  works as documented on opencode.ai, called from the `client` the plugin
-  factory receives. Used, best-effort, for the update-available popup ("##
-  Updates" above) — wrapped so a missing or throwing implementation degrades
-  silently to the sidebar panel's own notice rather than breaking the `event`
-  hook. Not yet read out of `sst/opencode`/`anomalyco/opencode` source the way
-  the rest of this section was.
-- Whether `event.type === 'session.created'` fires exactly once per OpenCode
-  process rather than once per session (including a dispatch's child
-  sessions). The update check guards against the latter with its own
-  in-process flag, so a wrong assumption here costs at most a redundant guard,
-  not a repeated check.
+- **Behaviour with a real model.** No model provider with available quota was
+  reachable from the environment the port was tested in, so the acceptance
+  check — `brainstorming` auto-triggering on "Let's make a react todo list" in
+  a clean session — has not been re-run on OpenCode 2. Everything above was
+  exercised with a scripted mock model.
+- Model routing with real per-slot models (the mock exposes one provider).
+- Whether a mouse click is delivered to the panel's `onMouseDown` props by the
+  live host. The click path is the same signal bump as the poll, which is
+  verified; the event delivery is not.
+- Behaviour on Windows, and with the TUI attached to a remote server (the
+  panel reads its snapshot from the local config directory).
+- Whether multiple `subagent` calls in a single assistant message run
+  concurrently in the foreground.

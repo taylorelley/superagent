@@ -1,15 +1,14 @@
 /**
  * The council: one question, several models, one synthesized answer.
  *
- * A plugin tool cannot call `task()` — there is no API for invoking a tool from
- * inside another tool's execute. So the fan-out is done the way OpenCode
- * actually supports it: each councillor is a registered subagent with its own
- * model, and a council agent dispatches them in parallel and synthesizes.
+ * A plugin tool could drive `ctx.session.create` / `ctx.session.prompt` itself,
+ * but then the fan-out would be invisible to the job board, to the user's
+ * permission rules, and to the TUI's subagent views. So the fan-out is done
+ * the way OpenCode already shows it: each councillor is a registered subagent
+ * with its own model, and the session's agent dispatches them in parallel
+ * through the `subagent` tool and synthesizes.
  *
  * That keeps the whole feature on documented surface and adds no dependency.
- * The alternative — driving `client.session.create` / `client.session.prompt`
- * from a plugin-registered tool — would need `@opencode-ai/plugin` at runtime
- * for its zod-based tool schema, which this plugin deliberately does not have.
  *
  * Councillors are sealed: no edits, no dispatching, no shell. They are there to
  * reason about a question, and a councillor that goes off investigating turns a
@@ -17,9 +16,11 @@
  */
 
 import { warn } from './log.js';
+import { defineAgent, parseModelRef } from './agents.js';
+import { toRules } from './permissions.js';
 
 /** Councillors get read access, but no way to change or launch anything. */
-const COUNCILLOR_PERMISSION = { edit: 'deny', task: 'deny', bash: 'deny' };
+const COUNCILLOR_PERMISSION = { edit: 'deny', subagent: 'deny', shell: 'deny' };
 
 /** A council needs disagreement to be worth anything. */
 export const MIN_MEMBERS = 2;
@@ -58,34 +59,41 @@ export const usableMembers = (council) => {
   return members;
 };
 
-/** Register one subagent per councillor. Returns the registered names. */
-export const registerCouncillors = (config, settings, { conflicts } = {}) => {
-  const members = usableMembers(settings?.council);
-  if (!members.length) return [];
+/**
+ * Register one subagent per councillor onto an agent editor.
+ *
+ * Returns `{ registered, conflicts }`. Runs inside a replayable transform, so
+ * like `registerAgents` it reports instead of logging; `usableMembers` warns,
+ * so callers validate once at setup and pass the result in.
+ */
+export const registerCouncillors = (
+  editor,
+  settings,
+  members = usableMembers(settings?.council),
+) => {
+  const result = { registered: [], conflicts: [] };
+  if (!editor || !members.length) return result;
 
-  config.agent = config.agent || {};
   const prefix = settings.agents?.prefix ?? '';
-  const registered = [];
 
   for (const member of members) {
     const name = `${prefix}councillor-${member.name}`;
-    if (Object.prototype.hasOwnProperty.call(config.agent, name)) {
-      warn(`an agent named "${name}" already exists; leaving it alone`);
-      conflicts?.push({ kind: 'agent', name });
+    if (editor.get(name) !== undefined) {
+      result.conflicts.push({ kind: 'agent', name });
       continue;
     }
 
-    config.agent[name] = {
+    defineAgent(editor, name, {
       description: `Council member ${member.name}. Answers one question independently.`,
       mode: 'subagent',
-      prompt: councillorPrompt(member),
-      permission: COUNCILLOR_PERMISSION,
-      ...(member.model ? { model: member.model } : {}),
-    };
-    registered.push({ name, member });
+      system: councillorPrompt(member),
+      permissions: toRules(COUNCILLOR_PERMISSION),
+      model: parseModelRef(member.model),
+    });
+    result.registered.push({ name, member });
   }
 
-  return registered;
+  return result;
 };
 
 const councillorPrompt = (member) =>
@@ -147,9 +155,9 @@ export const councilInstruction = (councillors, question) => {
     question || "(the question is the user's previous message)",
     '',
     `Dispatch all ${councillors.length} councillors in a SINGLE message, as parallel`,
-    '`task` calls, each with the identical question:',
+    '`subagent` calls, each with the identical question:',
     '',
-    ...councillors.map((c) => `  - subagent_type: \`${c.name}\``),
+    ...councillors.map((c) => `  - agent: \`${c.name}\``),
     '',
     'Give each one the full question and whatever context it needs to answer',
     'without access to your conversation. Do not tell any councillor what the',

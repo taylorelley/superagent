@@ -78,7 +78,7 @@ if [ "$entry_lines" -gt 200 ]; then
 fi
 echo "  [PASS] Entry point is $entry_lines lines"
 
-# Test 4c: The plugin must actually load and expose its hooks. This is the
+# Test 4c: The plugin must actually load and register its V2 hooks. This is the
 # real regression net for the multi-file split — a broken relative import
 # passes `node --check` but fails at import time.
 echo "Test 4c: Checking plugin module loads and exports hooks..."
@@ -86,7 +86,7 @@ if ! node "$SCRIPT_DIR/test-plugin-exports.mjs" "$SUPERAGENT_PLUGIN_FILE"; then
     echo "  [FAIL] Plugin did not load or is missing expected hooks"
     exit 1
 fi
-echo "  [PASS] Plugin loads and exposes config + messages transform hooks"
+echo "  [PASS] Plugin loads as a V2 { id, setup } and registers its skills and hooks"
 
 # Test 5: Verify bootstrap text does not reference a hardcoded skills path
 echo "Test 5: Checking bootstrap does not advertise a wrong skills path..."

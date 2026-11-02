@@ -20,9 +20,12 @@ import {
   AGENT_CONTRACT,
 } from '../../.opencode/lib/prompt-compose.js';
 import { ROSTER } from '../../.opencode/lib/roster.js';
-import { registerAgents, resetPromptCache } from '../../.opencode/lib/agents.js';
+import { registerAgents, resetPromptCache, parseModelRef } from '../../.opencode/lib/agents.js';
 import { renderRoutingTable, renderConflicts } from '../../.opencode/lib/routing.js';
-import { backgroundSubagentsAvailable } from '../../.opencode/lib/capabilities.js';
+import { toRules } from '../../.opencode/lib/permissions.js';
+import { discoverSkills, registerSkills, watchSkills } from '../../.opencode/lib/skills.js';
+import { defaultAgentConfigured } from '../../.opencode/lib/opencode-config.js';
+import { makeAgentEditor, makeSkillEditor, makeContext } from './fake-v2-context.mjs';
 import { packageRoot } from '../../.opencode/lib/paths.js';
 
 const withTempDir = (fn) => {
@@ -171,25 +174,42 @@ test('a template whose shape changed fails loudly rather than degrading', () => 
 
 // --------------------------------------------------------------- roster
 
+/**
+ * The effect a rule list gives `action` on resource `*` under V2's last-match
+ * semantics, considering only rules whose resource is `*`.
+ */
+const effectFor = (agent, action) =>
+  agent.permissions
+    .filter((r) => (r.action === action || r.action === '*') && r.resource === '*')
+    .at(-1)?.effect;
+
+/** Roster agents (everything that is not a built-in) in an editor. */
+const ours = (editor) =>
+  editor.list().filter((a) => !['build', 'plan', 'general', 'explore'].includes(a.id));
+
 test('the roster registers with correct modes, permissions and prompts', () => {
   resetPromptCache();
-  const config = {};
-  const registered = registerAgents(config, loadConfig({ env: {} }));
+  const editor = makeAgentEditor();
+  const { registered } = registerAgents(editor, loadConfig({ env: {} }));
 
   assert.equal(registered.length, ROSTER.length);
-  assert.equal(config.default_agent, 'superagent');
+  assert.equal(editor.state.default, 'superagent');
 
-  for (const [name, agent] of Object.entries(config.agent)) {
-    assert.ok(agent.description, `${name}: missing description`);
-    assert.ok(['primary', 'subagent', 'all'].includes(agent.mode), `${name}: invalid mode`);
-    assert.ok(agent.prompt && agent.prompt.length > 100, `${name}: missing prompt`);
+  for (const agent of ours(editor)) {
+    assert.ok(agent.description, `${agent.id}: missing description`);
+    assert.ok(['primary', 'subagent', 'all'].includes(agent.mode), `${agent.id}: invalid mode`);
+    assert.ok(agent.system && agent.system.length > 100, `${agent.id}: missing system prompt`);
+    for (const rule of agent.permissions) {
+      assert.ok(['allow', 'ask', 'deny'].includes(rule.effect), `${agent.id}: bad rule effect`);
+      assert.equal(typeof rule.resource, 'string', `${agent.id}: rule without a resource`);
+    }
   }
 
-  // Workers must not be able to dispatch. Denying with pattern "*" removes the
-  // tool from the agent entirely, which is what makes this structural.
+  // Workers must not be able to dispatch. Denying with resource "*" removes
+  // the subagent tool from the agent entirely, which makes this structural.
   for (const entry of ROSTER.filter((e) => !e.orchestrator)) {
     assert.equal(
-      config.agent[entry.key].permission.task,
+      effectFor(editor.get(entry.key), 'subagent'),
       'deny',
       `${entry.key} can still dispatch`,
     );
@@ -205,130 +225,247 @@ test('the roster registers with correct modes, permissions and prompts', () => {
     'oracle',
     'librarian',
   ]) {
-    assert.equal(config.agent[key].permission.edit, 'deny', `${key} can still edit`);
+    assert.equal(effectFor(editor.get(key), 'edit'), 'deny', `${key} can still edit`);
   }
+
+  // The orchestrator's edit scope: denied broadly, allowed under .superagent/,
+  // with the broad rule first so the narrow ones win under last-match.
+  const edits = editor.get('superagent').permissions.filter((r) => r.action === 'edit');
+  assert.deepEqual(
+    edits.map((r) => [r.resource, r.effect]),
+    [
+      ['*', 'deny'],
+      ['.superagent/**', 'allow'],
+      ['**/.superagent/**', 'allow'],
+    ],
+  );
 });
 
-test('an unrouted model slot omits the model key so the agent inherits', () => {
-  resetPromptCache();
-  const config = {};
-  registerAgents(config, loadConfig({ env: {} }));
-  for (const [name, agent] of Object.entries(config.agent)) {
-    assert.ok(!('model' in agent), `${name}: expected model to be omitted, got ${agent.model}`);
-  }
+test('V1 permission names and maps lower to V2 rules', () => {
+  assert.deepEqual(toRules({ task: 'deny', bash: 'ask', webfetch: 'allow' }), [
+    { action: 'subagent', resource: '*', effect: 'deny' },
+    { action: 'shell', resource: '*', effect: 'ask' },
+    { action: 'webfetch', resource: '*', effect: 'allow' },
+  ]);
+  assert.deepEqual(toRules({ edit: { 'src/**': 'allow', '*': 'deny' } }), [
+    { action: 'edit', resource: '*', effect: 'deny' },
+    { action: 'edit', resource: 'src/**', effect: 'allow' },
+  ]);
+  // A V2 rule list passes through, and a typo'd effect is dropped, not fatal.
+  assert.deepEqual(toRules([{ action: 'task', resource: 'oracle', effect: 'allow' }]), [
+    { action: 'subagent', resource: 'oracle', effect: 'allow' },
+  ]);
+  assert.deepEqual(toRules({ edit: 'nope' }), []);
 });
 
-test('a routed model slot sets the model', () => {
+test('permissionOverrides are appended after the roster rules, so they win', () => {
   resetPromptCache();
   const settings = loadConfig({ env: {} });
-  settings.agents.models.reviewer = 'someprovider/somemodel';
-  const config = {};
-  registerAgents(config, settings);
-  assert.equal(config.agent['task-reviewer'].model, 'someprovider/somemodel');
-  assert.equal(
-    config.agent['re-reviewer'].model,
-    'someprovider/somemodel',
-    'shares the reviewer slot',
-  );
-  assert.ok(!('model' in config.agent.implementer), 'other slots unaffected');
+  settings.agents.permissionOverrides = { oracle: { bash: 'deny', edit: 'allow' } };
+  const editor = makeAgentEditor();
+  registerAgents(editor, settings);
+  assert.equal(effectFor(editor.get('oracle'), 'shell'), 'deny');
+  assert.equal(effectFor(editor.get('oracle'), 'edit'), 'allow');
 });
 
-test('an unavailable model is dropped rather than substituted', () => {
+test('an unrouted model slot omits the model so the agent inherits', () => {
+  resetPromptCache();
+  const editor = makeAgentEditor();
+  registerAgents(editor, loadConfig({ env: {} }));
+  for (const agent of ours(editor)) {
+    assert.ok(!('model' in agent), `${agent.id}: expected model to be omitted, got ${agent.model}`);
+  }
+});
+
+test('a routed model slot sets a V2 model reference', () => {
+  resetPromptCache();
+  const settings = loadConfig({ env: {} });
+  settings.agents.models.reviewer = 'someprovider/some/model#high';
+  const editor = makeAgentEditor();
+  registerAgents(editor, settings);
+  const ref = { providerID: 'someprovider', id: 'some/model', variant: 'high' };
+  assert.deepEqual(editor.get('task-reviewer').model, ref);
+  assert.deepEqual(editor.get('re-reviewer').model, ref, 'shares the reviewer slot');
+  assert.ok(!('model' in editor.get('implementer')), 'other slots unaffected');
+});
+
+test('parseModelRef accepts provider/model and rejects anything else', () => {
+  assert.deepEqual(parseModelRef('a/b'), { providerID: 'a', id: 'b' });
+  assert.deepEqual(parseModelRef({ providerID: 'a', model: 'b' }), { providerID: 'a', id: 'b' });
+  for (const bad of ['nomodel', '/b', 'a/', '', null, 3]) {
+    assert.equal(parseModelRef(bad), undefined, `accepted ${JSON.stringify(bad)}`);
+  }
+});
+
+test('an unavailable or malformed model is dropped rather than substituted', () => {
   resetPromptCache();
   const settings = loadConfig({ env: {} });
   settings.agents.models.reviewer = 'ghost/model';
-  const config = {};
-  registerAgents(config, settings, { availableModels: new Set(['real/model']) });
-  assert.ok(
-    !('model' in config.agent['task-reviewer']),
-    'should inherit, not fall back to another model',
-  );
+  settings.agents.models.oracle = 'not-a-model-ref';
+  const editor = makeAgentEditor();
+  registerAgents(editor, settings, { availableModels: new Set(['real/model']) });
+  assert.ok(!('model' in editor.get('task-reviewer')), 'should inherit, not fall back');
+  assert.ok(!('model' in editor.get('oracle')), 'a malformed ref should inherit');
+});
+
+test('temperatures are reported per registered agent name', () => {
+  resetPromptCache();
+  const settings = loadConfig({ env: {} });
+  settings.agents.prefix = 'sp-';
+  const { temperatures } = registerAgents(makeAgentEditor(), settings);
+  assert.equal(temperatures['sp-oracle'], 0.1);
+  assert.equal(temperatures['sp-task-reviewer'], 0.1);
+  assert.ok(!('sp-implementer' in temperatures), 'implementers follow the model default');
 });
 
 test('an existing agent of the same name is never overwritten', () => {
   resetPromptCache();
-  const mine = { description: 'MINE', prompt: 'mine' };
-  const config = { agent: { implementer: mine } };
-  const registered = registerAgents(config, loadConfig({ env: {} }));
+  const editor = makeAgentEditor(['build', 'implementer']);
+  const before = JSON.stringify(editor.get('implementer'));
+  const { registered, conflicts } = registerAgents(editor, loadConfig({ env: {} }));
 
-  assert.equal(config.agent.implementer, mine, "the user's agent was replaced");
+  assert.equal(JSON.stringify(editor.get('implementer')), before, "the user's agent was changed");
   assert.equal(registered.length, ROSTER.length - 1);
   assert.ok(!registered.some((e) => e.key === 'implementer'));
-});
-
-test('an agent collision is reported through the conflicts collector', () => {
-  resetPromptCache();
-  const mine = { description: 'MINE', prompt: 'mine' };
-  const config = { agent: { implementer: mine } };
-  const conflicts = [];
-  registerAgents(config, loadConfig({ env: {} }), { conflicts });
-
   assert.deepEqual(conflicts, [{ kind: 'agent', name: 'implementer' }]);
 });
 
-test('the conflicts collector stays empty when nothing collides', () => {
+test('the conflicts list stays empty when nothing collides', () => {
   resetPromptCache();
-  const config = {};
-  const conflicts = [];
-  registerAgents(config, loadConfig({ env: {} }), { conflicts });
-
-  assert.deepEqual(conflicts, []);
+  assert.deepEqual(registerAgents(makeAgentEditor(), loadConfig({ env: {} })).conflicts, []);
 });
 
 test('agents.prefix registers the roster alongside a colliding name', () => {
   resetPromptCache();
   const settings = loadConfig({ env: {} });
   settings.agents.prefix = 'sp-';
-  const config = { agent: { implementer: { description: 'MINE' } } };
-  const registered = registerAgents(config, settings);
+  const editor = makeAgentEditor(['implementer']);
+  const { registered } = registerAgents(editor, settings);
 
   assert.equal(registered.length, ROSTER.length);
-  assert.ok(config.agent['sp-implementer']);
-  assert.equal(config.agent.implementer.description, 'MINE');
-  assert.equal(config.default_agent, 'sp-superagent');
+  assert.ok(editor.get('sp-implementer'));
+  assert.equal(editor.get('implementer').system, undefined, 'the existing agent was touched');
+  assert.equal(editor.state.default, 'sp-superagent');
 });
 
-test('default_agent is not set when the orchestrator was skipped', () => {
-  // OpenCode throws at startup if default_agent names an agent that does not
-  // exist, so a skipped registration must not leave the setting behind.
+test('the default agent is not selected when the orchestrator was skipped', () => {
   resetPromptCache();
-  const config = { agent: { superagent: { description: 'MINE' } } };
-  registerAgents(config, loadConfig({ env: {} }));
-  assert.equal(config.default_agent, undefined);
+  const editor = makeAgentEditor(['build', 'superagent']);
+  registerAgents(editor, loadConfig({ env: {} }));
+  assert.equal(editor.state.default, undefined);
 });
 
-test('an existing default_agent is respected', () => {
+test("the user's own default_agent is respected", () => {
   resetPromptCache();
-  const config = { default_agent: 'build' };
-  registerAgents(config, loadConfig({ env: {} }));
-  assert.equal(config.default_agent, 'build');
+  const editor = makeAgentEditor();
+  registerAgents(editor, loadConfig({ env: {} }), { defaultAgentConfigured: true });
+  assert.equal(editor.state.default, undefined);
+});
+
+test('defaultAgentConfigured reads default_agent from the OpenCode config layers', () => {
+  withTempDir((dir) => {
+    const configDir = path.join(dir, 'config');
+    const projectDir = path.join(dir, 'project');
+    fs.mkdirSync(path.join(projectDir, '.opencode'), { recursive: true });
+    fs.mkdirSync(configDir, { recursive: true });
+    assert.equal(defaultAgentConfigured({ configDir, projectDir, env: {} }), false);
+    fs.writeFileSync(
+      path.join(projectDir, '.opencode', 'opencode.jsonc'),
+      '{ // mine\n "default_agent": "build", }',
+    );
+    assert.equal(defaultAgentConfigured({ configDir, projectDir, env: {} }), true);
+  });
+});
+
+test('defaultAgentConfigured honours OPENCODE_CONFIG_CONTENT', () => {
+  const env = { OPENCODE_CONFIG_CONTENT: '{ "default_agent": "build", // inline\n }' };
+  assert.equal(defaultAgentConfigured({ env }), true);
+  assert.equal(defaultAgentConfigured({ env: { OPENCODE_CONFIG_CONTENT: 'not json' } }), false);
 });
 
 test('the solo preset registers nothing', () => {
   resetPromptCache();
-  const config = {};
-  const registered = registerAgents(config, loadConfig({ env: { SUPERAGENT_PRESET: 'solo' } }));
+  const editor = makeAgentEditor();
+  const { registered } = registerAgents(editor, loadConfig({ env: { SUPERAGENT_PRESET: 'solo' } }));
   assert.equal(registered.length, 0);
-  assert.equal(config.default_agent, undefined);
-  assert.deepEqual(config.agent ?? {}, {});
+  assert.equal(editor.state.default, undefined);
+  assert.deepEqual(ours(editor), []);
 });
 
 test('agents.disable skips named roster entries', () => {
   resetPromptCache();
   const settings = loadConfig({ env: {} });
   settings.agents.disable = ['oracle', 'librarian'];
-  const config = {};
-  const registered = registerAgents(config, settings);
+  const editor = makeAgentEditor();
+  const { registered } = registerAgents(editor, settings);
   assert.equal(registered.length, ROSTER.length - 2);
-  assert.ok(!config.agent.oracle);
+  assert.ok(!editor.get('oracle'));
+});
+
+test('registration is replay-safe: running the transform twice yields the same agents', () => {
+  resetPromptCache();
+  const settings = loadConfig({ env: {} });
+  const once = makeAgentEditor();
+  registerAgents(once, settings);
+  const twice = makeAgentEditor();
+  registerAgents(twice, settings);
+  assert.deepEqual(twice.list(), once.list());
+});
+
+// --------------------------------------------------------------- skills
+
+test('discoverSkills reads every shipped skill the way OpenCode would', () => {
+  const skills = discoverSkills();
+  const ids = skills.map((s) => s.id);
+  assert.ok(ids.includes('using-superagent'));
+  assert.ok(ids.includes('brainstorming'));
+  const brainstorming = skills.find((s) => s.id === 'brainstorming');
+  assert.ok(brainstorming.description.startsWith('You MUST use this'));
+  assert.ok(path.isAbsolute(brainstorming.path));
+  assert.ok(!brainstorming.content.startsWith('---'), 'frontmatter should be stripped');
+});
+
+test("registerSkills leaves the user's own skill of the same ID alone", () => {
+  const mine = { id: 'brainstorming', name: 'mine', path: '/x/SKILL.md', content: 'MINE' };
+  const editor = makeSkillEditor([mine]);
+  const added = registerSkills(editor, discoverSkills());
+  assert.equal(editor.get('brainstorming'), mine);
+  assert.ok(!added.includes('brainstorming'));
+  assert.ok(added.includes('writing-plans'));
+});
+
+test('watchSkills debounces SKILL.md changes into one reload, and stops cleanly', async () => {
+  let listener;
+  let closed = false;
+  const watch = (_dir, _opts, fn) => {
+    listener = fn;
+    return { close: () => (closed = true) };
+  };
+  let reloads = 0;
+  const stop = watchSkills('/skills', () => (reloads += 1), { delayMs: 5, watch });
+  listener('change', 'a/SKILL.md');
+  listener('change', 'b/SKILL.md');
+  listener('change', 'a/notes.txt');
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(reloads, 1);
+  stop();
+  assert.equal(closed, true);
+
+  // A platform without recursive watch must not take the plugin down.
+  const noop = watchSkills('/skills', () => {}, {
+    watch: () => {
+      throw new Error('unsupported');
+    },
+  });
+  assert.doesNotThrow(noop);
 });
 
 // --------------------------------------------------------------- routing
 
 test('the routing table names only registered agents, each distinctly', () => {
   resetPromptCache();
-  const registered = registerAgents({}, loadConfig({ env: {} }));
-  const table = renderRoutingTable(registered, { backgroundAvailable: false });
+  const { registered } = registerAgents(makeAgentEditor(), loadConfig({ env: {} }));
+  const table = renderRoutingTable(registered);
 
   for (const entry of registered.filter((e) => e.mode !== 'primary')) {
     assert.ok(table.includes(`\`${entry.name}\``), `routing table omits ${entry.name}`);
@@ -347,20 +484,23 @@ test('the routing table names only agents that were actually registered', () => 
   resetPromptCache();
   const settings = loadConfig({ env: {} });
   settings.agents.disable = ['oracle'];
-  const table = renderRoutingTable(registerAgents({}, settings), {});
+  const table = renderRoutingTable(registerAgents(makeAgentEditor(), settings).registered);
   assert.ok(!table.includes('`oracle`'), 'routes to an agent that was not registered');
 });
 
-test('the routing table changes with background availability', () => {
+test('the routing table speaks the V2 subagent tool', () => {
   resetPromptCache();
-  const registered = registerAgents({}, loadConfig({ env: {} }));
-  const on = renderRoutingTable(registered, { backgroundAvailable: true });
-  const off = renderRoutingTable(registered, { backgroundAvailable: false });
-
-  assert.ok(on.includes('background: true'));
-  assert.ok(!on.includes('OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS'));
-  assert.ok(off.includes('OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS'));
-  assert.ok(off.includes('one message'));
+  const table = renderRoutingTable(
+    registerAgents(makeAgentEditor(), loadConfig({ env: {} })).registered,
+  );
+  // V2's subagent tool has a `model` parameter; the table must steer the
+  // orchestrator to agent selection rather than claim the parameter is absent.
+  assert.match(table, /Leave the `subagent`\ntool's own `model` unset/);
+  assert.ok(!/takes no\s+`model`/.test(table), 'the V1 "no model parameter" claim leaked through');
+  assert.ok(table.includes('Dispatch `agent`'));
+  assert.ok(table.includes('background: true'));
+  assert.ok(!table.includes('subagent_type'), 'the V1 task tool argument leaked through');
+  assert.ok(!table.includes('OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS'));
 });
 
 test('renderConflicts is empty when nothing collided', () => {
@@ -378,22 +518,6 @@ test('renderConflicts lists every collision and the prefix remedy', () => {
   assert.match(text, /command `\/preset`/);
   assert.match(text, /agents.*prefix/);
   assert.match(text, /sp-/);
-});
-
-test('background availability is read from the environment', () => {
-  assert.equal(backgroundSubagentsAvailable({}), false);
-  assert.equal(
-    backgroundSubagentsAvailable({ OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: 'true' }),
-    true,
-  );
-  assert.equal(
-    backgroundSubagentsAvailable({ OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: '1' }),
-    true,
-  );
-  assert.equal(
-    backgroundSubagentsAvailable({ OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: 'false' }),
-    false,
-  );
 });
 
 // ------------------------------------------------- orchestrator prompt
@@ -466,7 +590,7 @@ import {
   registerCouncillors,
   councilInstruction,
 } from '../../.opencode/lib/council.js';
-import { registerCommands, expandCommand, COMMANDS } from '../../.opencode/lib/commands.js';
+import { commandsToRegister, expandCommand, COMMANDS } from '../../.opencode/lib/commands.js';
 import { cachePath, writeCache } from '../../.opencode/lib/update-check.js';
 
 const councilSettings = (members, enabled = true) => {
@@ -487,64 +611,62 @@ test('a council needs at least two members to convene', () => {
 });
 
 test('councillors register as sealed subagents with their own models', () => {
-  const config = {};
-  const registered = registerCouncillors(config, councilSettings(TWO));
+  const editor = makeAgentEditor();
+  const { registered } = registerCouncillors(editor, councilSettings(TWO));
 
   assert.equal(registered.length, 2);
-  assert.equal(config.agent['councillor-alpha'].model, 'p/a');
-  assert.equal(config.agent['councillor-beta'].model, 'p/b');
+  assert.deepEqual(editor.get('councillor-alpha').model, { providerID: 'p', id: 'a' });
+  assert.deepEqual(editor.get('councillor-beta').model, { providerID: 'p', id: 'b' });
   for (const name of ['councillor-alpha', 'councillor-beta']) {
-    const agent = config.agent[name];
+    const agent = editor.get(name);
     assert.equal(agent.mode, 'subagent');
     // A councillor that goes off investigating turns a cheap parallel opinion
     // into an expensive serial one.
-    assert.equal(agent.permission.edit, 'deny');
-    assert.equal(agent.permission.task, 'deny');
-    assert.equal(agent.permission.bash, 'deny');
-    assert.match(agent.prompt, /VERDICT:/);
-    assert.match(agent.prompt, /RISK:/);
+    assert.equal(effectFor(agent, 'edit'), 'deny');
+    assert.equal(effectFor(agent, 'subagent'), 'deny');
+    assert.equal(effectFor(agent, 'shell'), 'deny');
+    assert.match(agent.system, /VERDICT:/);
+    assert.match(agent.system, /RISK:/);
   }
   assert.match(
-    config.agent['councillor-alpha'].prompt,
+    editor.get('councillor-alpha').system,
     /correctness/,
     'steering should reach the prompt',
   );
 });
 
 test('councillors are not registered when the council is off', () => {
-  const config = {};
-  assert.deepEqual(registerCouncillors(config, councilSettings(TWO, false)), []);
-  assert.deepEqual(config.agent ?? {}, {});
+  const editor = makeAgentEditor();
+  assert.deepEqual(registerCouncillors(editor, councilSettings(TWO, false)).registered, []);
+  assert.ok(!editor.get('councillor-alpha'));
 });
 
 test('an existing agent named like a councillor is never overwritten', () => {
-  const mine = { description: 'MINE' };
-  const config = { agent: { 'councillor-alpha': mine } };
-  const registered = registerCouncillors(config, councilSettings(TWO));
+  const editor = makeAgentEditor(['build', 'councillor-alpha']);
+  const before = JSON.stringify(editor.get('councillor-alpha'));
+  const { registered, conflicts } = registerCouncillors(editor, councilSettings(TWO));
 
-  assert.equal(config.agent['councillor-alpha'], mine, "the user's agent was replaced");
+  assert.equal(
+    JSON.stringify(editor.get('councillor-alpha')),
+    before,
+    "the user's agent was changed",
+  );
   assert.equal(registered.length, 1);
   assert.ok(!registered.some((r) => r.name === 'councillor-alpha'));
-  assert.ok(config.agent['councillor-beta'], 'the non-colliding councillor should still register');
-});
-
-test('a councillor collision is reported through the conflicts collector', () => {
-  const config = { agent: { 'councillor-alpha': { description: 'MINE' } } };
-  const conflicts = [];
-  registerCouncillors(config, councilSettings(TWO), { conflicts });
-
+  assert.ok(editor.get('councillor-beta'), 'the non-colliding councillor should still register');
   assert.deepEqual(conflicts, [{ kind: 'agent', name: 'councillor-alpha' }]);
 });
 
 test('the council instruction names every registered councillor', () => {
-  const config = {};
-  const registered = registerCouncillors(config, councilSettings(TWO));
+  const { registered } = registerCouncillors(makeAgentEditor(), councilSettings(TWO));
   const text = councilInstruction(registered, 'Which cache strategy?');
 
   assert.match(text, /councillor-alpha/);
   assert.match(text, /councillor-beta/);
   assert.match(text, /Which cache strategy\?/);
   assert.match(text, /SINGLE message/);
+  assert.match(text, /`subagent` calls/);
+  assert.ok(!text.includes('subagent_type'), 'the V1 task tool argument leaked through');
   // The failure mode a council exists to prevent.
   assert.match(text, /Do not present one opinion as a consensus/);
 });
@@ -562,20 +684,15 @@ test('an unconfigured council explains itself instead of dispatching', () => {
 // -------------------------------------------------------------- commands
 
 test('commands register without clobbering existing ones', () => {
-  const config = { command: { preset: { template: 'MINE' } } };
-  registerCommands(config, loadConfig({ env: {} }));
-  assert.equal(config.command.preset.template, 'MINE', "the user's command was replaced");
+  const { commands, conflicts } = commandsToRegister(loadConfig({ env: {} }), new Set(['preset']));
+  const names = commands.map((c) => c.name);
+  assert.ok(!names.includes('preset'), "the user's command would be shadowed");
   // /board is on by default; /council is not, so it is gated out here.
-  assert.ok(config.command.board, 'other enabled commands should still register');
-  assert.equal(Object.keys(COMMANDS).length, 4);
-});
-
-test('a command collision is reported through the conflicts collector', () => {
-  const config = { command: { preset: { template: 'MINE' } } };
-  const conflicts = [];
-  registerCommands(config, loadConfig({ env: {} }), { conflicts });
-
+  assert.ok(names.includes('board'), 'other enabled commands should still register');
+  assert.ok(!names.includes('council'));
   assert.deepEqual(conflicts, [{ kind: 'command', name: 'preset' }]);
+  assert.equal(Object.keys(COMMANDS).length, 4);
+  for (const command of commands) assert.ok(command.description, `${command.name}: no description`);
 });
 
 test('/preset show reports the active preset without claiming a change', () => {
@@ -584,12 +701,53 @@ test('/preset show reports the active preset without claiming a change', () => {
   assert.ok(!/restart/i.test(text), 'showing should not talk about restarting');
 });
 
-test('/preset switching is honest that it needs a restart', () => {
+test('/preset switching without --persist is honest that nothing changed', () => {
   const text = expandCommand('preset', 'solo', { settings: loadConfig({ env: {} }) });
-  // Agents are resolved into cached state at startup. Reporting "switched"
-  // without saying this would leave the user believing they are on a model
-  // they are not on.
-  assert.match(text, /does not take effect until OpenCode restarts/);
+  assert.match(text, /not saved, so nothing changed/);
+  assert.match(text, /--persist/);
+});
+
+test('/preset --persist applies the preset and is honest about the running session', () => {
+  withTempDir((dir) => {
+    const applied = [];
+    const text = expandCommand('preset', 'solo --persist', {
+      settings: loadConfig({ env: {} }),
+      configDir: dir,
+      onPresetPersist: (name) => applied.push(name),
+    });
+    assert.deepEqual(applied, ['solo']);
+    assert.match(text, /is reloading its agents and commands/);
+    // A session keeps the agent and model it selected; saying "switched"
+    // without this would leave the user believing they are on a model they
+    // are not on.
+    assert.match(text, /keeps the agent and model it already selected/);
+  });
+});
+
+test('/preset --persist reports a failed write as a failure, not a missing flag', () => {
+  withTempDir((dir) => {
+    const blocker = path.join(dir, 'blocker');
+    fs.writeFileSync(blocker, 'not a directory');
+    const text = expandCommand('preset', 'solo --persist', {
+      settings: loadConfig({ env: {} }),
+      configDir: path.join(blocker, 'config'),
+    });
+    assert.match(text, /could not be saved/);
+    assert.ok(!/Re-run as/.test(text), 'told the user to re-run the command that just failed');
+  });
+});
+
+test('/preset --persist without a way to apply it says a restart is needed', () => {
+  withTempDir((dir) => {
+    const text = expandCommand('preset', 'solo --persist', {
+      settings: loadConfig({ env: {} }),
+      configDir: dir,
+      onPresetPersist: () => {
+        throw new Error('no reload');
+      },
+    });
+    assert.match(text, /opencode service restart/);
+  });
 });
 
 test('/preset rejects an unknown name and lists the real ones', () => {
@@ -688,9 +846,8 @@ test('the roster still registers from a config with null sections', () => {
   resetPromptCache();
   withTempDir((dir) => {
     fs.writeFileSync(path.join(dir, 'superagent.json'), '{"agents": null, "council": null}');
-    const config = {};
     assert.equal(
-      registerAgents(config, loadConfig({ configDir: dir, env: {} })).length,
+      registerAgents(makeAgentEditor(), loadConfig({ configDir: dir, env: {} })).registered.length,
       ROSTER.length,
     );
   });
@@ -715,12 +872,13 @@ test('council honours a configured minParticipants above the floor', () => {
 });
 
 test('feature commands are not offered when their feature is off', () => {
-  const config = {};
-  registerCommands(config, loadConfig({ env: { SUPERAGENT_PRESET: 'solo' } }));
+  const names = commandsToRegister(loadConfig({ env: { SUPERAGENT_PRESET: 'solo' } })).commands.map(
+    (c) => c.name,
+  );
   // /preset is how you turn the layer back on, so it must survive.
-  assert.ok(config.command.preset, '/preset should always be available');
-  assert.ok(!config.command.board, '/board expands to nothing when the board is off');
-  assert.ok(!config.command.council, '/council expands to nothing when the council is off');
+  assert.ok(names.includes('preset'), '/preset should always be available');
+  assert.ok(!names.includes('board'), '/board expands to nothing when the board is off');
+  assert.ok(!names.includes('council'), '/council expands to nothing when the council is off');
 });
 
 test('/preset --persist creates the config directory if it is missing', () => {
@@ -770,15 +928,209 @@ test('every template-backed roster entry registers with a real prompt', () => {
   // prompt could not be extracted, so a broken extractor shows up as a missing
   // specialist rather than an error.
   resetPromptCache();
-  const config = {};
-  registerAgents(config, loadConfig({ env: {} }));
+  const editor = makeAgentEditor();
+  registerAgents(editor, loadConfig({ env: {} }));
 
   for (const entry of ROSTER.filter((e) => e.prompt.kind === 'template')) {
-    const agent = config.agent[entry.key];
+    const agent = editor.get(entry.key);
     assert.ok(agent, `${entry.key} was not registered`);
     assert.ok(
-      agent.prompt.split('\n').length > 30,
-      `${entry.key}: prompt is ${agent.prompt.split('\n').length} lines, expected the full role body`,
+      agent.system.split('\n').length > 30,
+      `${entry.key}: prompt is ${agent.system.split('\n').length} lines, expected the full role body`,
     );
   }
+});
+
+// ------------------------------------------------- the V2 plugin, end to end
+
+import plugin from '../../.opencode/plugins/superagent.js';
+import { userMessage, messageText } from './fake-v2-context.mjs';
+
+const withPlugin = async (options, fn) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'superagent-plugin-'));
+  const saved = process.env.OPENCODE_CONFIG_DIR;
+  process.env.OPENCODE_CONFIG_DIR = path.join(dir, 'config');
+  const { before, ...contextOptions } = options;
+  before?.(dir);
+  const fake = makeContext({ directory: path.join(dir, 'project'), ...contextOptions });
+  const cleanup = await plugin.setup(fake.ctx);
+  try {
+    await fn(fake, dir);
+  } finally {
+    await cleanup?.();
+    if (saved === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+    else process.env.OPENCODE_CONFIG_DIR = saved;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+test('plugin: registers the roster, selects the orchestrator, and replays stably', async () => {
+  resetPromptCache();
+  await withPlugin({}, async (fake) => {
+    const first = fake.agents();
+    assert.ok(first.get('superagent'));
+    assert.equal(first.state.default, 'superagent');
+    assert.deepEqual(fake.agents().list(), first.list(), 'a replay changed the agents');
+  });
+});
+
+test("plugin: a user's agent wins and the conflict reaches the model once", async () => {
+  resetPromptCache();
+  await withPlugin(
+    { builtinAgents: ['build', 'oracle'], existingCommands: ['board'] },
+    async (fake) => {
+      fake.agents(); // replay the transform, as a registry read does
+      const event = {
+        sessionID: 's',
+        agent: 'superagent',
+        system: [],
+        messages: [userMessage('hi')],
+        options: {},
+      };
+      await fake.fire('session', 'context', event);
+      const text = messageText(event.messages[0]);
+      assert.match(text, /SUPERAGENT_CONFIG_CONFLICTS/);
+      assert.match(text, /agent `oracle`/);
+      assert.match(text, /command `\/board`/);
+      assert.ok(!fake.commands().has('board'), "the user's /board would be shadowed");
+    },
+  );
+});
+
+test('plugin: the context hook applies per-agent temperature only when unset', async () => {
+  resetPromptCache();
+  await withPlugin({}, async (fake) => {
+    fake.agents();
+    const oracle = {
+      sessionID: 's',
+      agent: 'oracle',
+      system: [],
+      messages: [userMessage('q')],
+      options: {},
+    };
+    await fake.fire('session', 'context', oracle);
+    assert.equal(oracle.options.temperature, 0.1);
+
+    const pinned = {
+      sessionID: 's',
+      agent: 'oracle',
+      system: [],
+      messages: [userMessage('q')],
+      options: { temperature: 0.7 },
+    };
+    await fake.fire('session', 'context', pinned);
+    assert.equal(pinned.options.temperature, 0.7, 'an earlier override was replaced');
+
+    const build = {
+      sessionID: 's',
+      agent: 'build',
+      system: [],
+      messages: [userMessage('q')],
+      options: {},
+    };
+    await fake.fire('session', 'context', build);
+    assert.equal(build.options.temperature, undefined);
+  });
+});
+
+test('plugin: a command expands at execution and is submitted as a prompt', async () => {
+  resetPromptCache();
+  await withPlugin({}, async (fake) => {
+    const preset = fake.commands().get('preset');
+    assert.ok(preset, '/preset was not registered');
+    await preset.execute({
+      sessionID: 'ses_1',
+      prompt: { text: 'list', files: [] },
+      delivery: 'steer',
+    });
+    assert.equal(fake.prompts.length, 1);
+    assert.equal(fake.prompts[0].sessionID, 'ses_1');
+    assert.equal(fake.prompts[0].delivery, 'steer');
+    assert.deepEqual(fake.prompts[0].files, [], 'prompt attachments were dropped');
+    assert.match(fake.prompts[0].text, /Superagent presets:/);
+  });
+});
+
+test('plugin: a subagent dispatch is recorded, and its ownership conflict annotated', async () => {
+  resetPromptCache();
+  await withPlugin({}, async (fake) => {
+    const dispatch = (id, prompt) => ({
+      tool: 'subagent',
+      sessionID: 'parent',
+      agent: 'superagent',
+      messageID: 'm',
+      id,
+      input: { agent: 'implementer', description: id, prompt, background: true },
+    });
+    const owns = '<!-- superagent-ownership: write=src/a.js -->\nwork';
+    await fake.fire('tool', 'execute.before', dispatch('c1', owns));
+    const second = await fake.fire('tool', 'execute.before', dispatch('c2', owns));
+    assert.notEqual(second.input.prompt, owns, 'the conflicting prompt was not annotated');
+
+    // Background: the child session id comes back in the tool's result text.
+    await fake.fire('tool', 'execute.after', {
+      ...dispatch('c1', owns),
+      status: 'completed',
+      result: {
+        content: [{ type: 'text', text: 'working in the background (sessionID: ses_child)' }],
+      },
+    });
+    const event = {
+      sessionID: 'parent',
+      agent: 'superagent',
+      system: [],
+      messages: [userMessage('go')],
+      options: {},
+    };
+    await fake.fire('session', 'context', event);
+    assert.match(messageText(event.messages.at(-1)), /\| implementer \| c1 \| running \(bg\)/);
+
+    // ...and settles when that child's execution succeeds.
+    await fake.emit({ type: 'session.execution.succeeded', data: { sessionID: 'ses_child' } });
+    const later = {
+      sessionID: 'parent',
+      agent: 'superagent',
+      system: [],
+      messages: [userMessage('go')],
+      options: {},
+    };
+    await fake.fire('session', 'context', later);
+    assert.match(messageText(later.messages.at(-1)), /\| implementer \| c1 \| completed \(bg\)/);
+  });
+});
+
+test('plugin: a live switch from solo turns the board and its snapshot on', async () => {
+  resetPromptCache();
+  const { snapshotPath, readSnapshot } = await import('../../.opencode/lib/tui-snapshot.js');
+  const before = (dir) => {
+    fs.mkdirSync(path.join(dir, 'config'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'config', 'superagent.json'), '{"preset": "solo"}');
+  };
+  await withPlugin({ before }, async (fake, dir) => {
+    const file = snapshotPath(path.join(dir, 'config'), path.join(dir, 'project'));
+    const dispatch = (id) => ({
+      tool: 'subagent',
+      sessionID: 'ses_live_switch',
+      id,
+      input: { agent: 'implementer', description: id, prompt: 'go' },
+    });
+    await fake.fire('tool', 'execute.before', dispatch('c1'));
+    assert.equal(readSnapshot(file), null, 'solo should not feed the panel');
+
+    await fake
+      .commands()
+      .get('preset')
+      .execute({
+        sessionID: 'ses_live_switch',
+        prompt: { text: 'team --persist' },
+        delivery: 'steer',
+      });
+    assert.ok(fake.agents().get('implementer'), 'the roster did not come back');
+
+    await fake.fire('tool', 'execute.before', dispatch('c2'));
+    assert.deepEqual(
+      readSnapshot(file)?.sessions?.ses_live_switch?.records?.map((r) => r.objective),
+      ['c2'],
+    );
+  });
 });

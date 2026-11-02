@@ -10,7 +10,7 @@
 import fs from 'fs';
 import path from 'path';
 import { warn, debug } from './log.js';
-import { snapshotDir } from './tui-snapshot.js';
+import { snapshotDir, snapshotPath, writeSnapshot } from './tui-snapshot.js';
 
 export const REPO_OWNER = 'taylorelley';
 export const REPO_NAME = 'superagent';
@@ -145,4 +145,25 @@ export const checkForUpdate = async ({
   };
   writeCache(cacheFile, result);
   return result;
+};
+
+/**
+ * Project the board to the TUI snapshot file, with the cached update status.
+ *
+ * Lives here rather than in `tui-snapshot.js` only because that module is
+ * imported by this one; it is the one place the board, the snapshot and the
+ * update cache meet. Writes nothing when the panel or the board is off.
+ */
+export const publishSnapshot = ({ settings, configDir, directory, version, sessions }) => {
+  // Decided per call: a live `/preset --persist` can turn the board on or off.
+  if (settings?.tui?.enabled === false || settings?.board?.enabled === false) return false;
+  const file = snapshotPath(configDir, directory);
+  const updateCache = readCache(cachePath(configDir));
+  return writeSnapshot(file, {
+    directory,
+    pluginVersion: version,
+    updateAvailable: updateCache?.updateAvailable ?? false,
+    latestVersion: updateCache?.latestVersion ?? null,
+    sessions,
+  });
 };

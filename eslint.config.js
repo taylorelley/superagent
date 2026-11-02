@@ -18,6 +18,7 @@ const nodeGlobals = {
   queueMicrotask: 'readonly',
   fetch: 'readonly',
   AbortSignal: 'readonly',
+  AbortController: 'readonly',
 };
 
 const browserGlobals = {

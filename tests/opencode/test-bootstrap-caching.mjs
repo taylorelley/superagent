@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { pathToFileURL } from 'url';
+import { makeContext, userMessage } from './fake-v2-context.mjs';
 
 const [, , pluginPath, scenario] = process.argv;
 
@@ -29,8 +30,20 @@ fs.readFileSync = function (...args) {
 };
 
 const mod = await import(pathToFileURL(pluginPath).href);
-const plugin = await mod.SuperagentPlugin({ client: {}, directory: '.' });
-const transform = plugin['experimental.chat.messages.transform'];
+const fake = makeContext({ directory: '.' });
+await mod.default.setup(fake.ctx);
+// Setup reads every SKILL.md once to register the skills; what is measured
+// here is the per-request path, so the counters start after it.
+existsCount = 0;
+readCount = 0;
+const transform = (_input, output) =>
+  fake.fire('session', 'context', {
+    sessionID: 's',
+    agent: 'build',
+    system: [],
+    messages: output.messages,
+    options: {},
+  });
 
 const firstOutput = makeOutput(`${scenario} bootstrap first step`);
 await transform({}, firstOutput);
@@ -46,8 +59,9 @@ const result = {
   secondBootstrapParts: countBootstrapParts(secondOutput),
   staleMentionMapping: bootstrapText(firstOutput).includes('@mention'),
   staleTaskMapping: bootstrapText(firstOutput).includes('`Task` tool with subagents'),
-  mapsSubagentToTask: bootstrapText(firstOutput).includes('`task` with `subagent_type: "general"`'),
-  mapsMutationToApplyPatch: bootstrapText(firstOutput).includes('`apply_patch`'),
+  mapsSubagentToTool: bootstrapText(firstOutput).includes('`subagent` with `agent: "general"`'),
+  mapsShellToShell: bootstrapText(firstOutput).includes('Run shell commands → `shell`'),
+  teachesV1TaskTool: bootstrapText(firstOutput).includes('subagent_type'),
   firstReadCount: afterFirst.readCount,
   secondReadCount: afterSecond.readCount,
   firstExistsCount: afterFirst.existsCount,
@@ -72,25 +86,18 @@ function isBootstrapSkillPath(filePath) {
 }
 
 function makeOutput(text) {
-  return {
-    messages: [
-      {
-        info: { role: 'user' },
-        parts: [{ type: 'text', text }],
-      },
-    ],
-  };
+  return { messages: [userMessage(text)] };
 }
 
 function countBootstrapParts(output) {
-  return output.messages[0].parts.filter(
+  return output.messages[0].content.filter(
     (part) => part.type === 'text' && part.text.includes('EXTREMELY_IMPORTANT'),
   ).length;
 }
 
 function bootstrapText(output) {
   return (
-    output.messages[0].parts.find(
+    output.messages[0].content.find(
       (part) => part.type === 'text' && part.text.includes('EXTREMELY_IMPORTANT'),
     )?.text || ''
   );
@@ -127,13 +134,14 @@ function assertPresentBootstrap(result) {
   if (result.staleTaskMapping) {
     failures.push('expected OpenCode bootstrap not to teach stale Task-tool mapping');
   }
-  if (!result.mapsSubagentToTask) {
-    failures.push(
-      'expected OpenCode bootstrap to map general-purpose subagents to task with subagent_type',
-    );
+  if (!result.mapsSubagentToTool) {
+    failures.push('expected OpenCode bootstrap to map general-purpose subagents to subagent');
   }
-  if (!result.mapsMutationToApplyPatch) {
-    failures.push('expected OpenCode bootstrap to map file mutation to apply_patch');
+  if (!result.mapsShellToShell) {
+    failures.push('expected OpenCode bootstrap to map shell commands to the V2 shell tool');
+  }
+  if (result.teachesV1TaskTool) {
+    failures.push('expected OpenCode bootstrap not to teach the V1 task tool (subagent_type)');
   }
   return failures;
 }

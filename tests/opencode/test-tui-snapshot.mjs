@@ -7,6 +7,7 @@
  */
 
 import test from 'node:test';
+import { makeContext } from './fake-v2-context.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -185,6 +186,14 @@ test('an unwritable destination is reported, not thrown', () => {
 
 // ------------------------------------------------------------- the wiring
 
+/** Start the V2 server plugin against a fake context; resolves to the fake. */
+const startPlugin = async (projectDir) => {
+  const { default: plugin } = await import('../../.opencode/plugins/superagent.js');
+  const fake = makeContext({ directory: projectDir });
+  await plugin.setup(fake.ctx);
+  return fake;
+};
+
 test('a dispatch through the plugin lands in a snapshot the panel can read', async () => {
   resetSnapshotCache();
   const configDir = tempDir();
@@ -193,22 +202,30 @@ test('a dispatch through the plugin lands in a snapshot the panel can read', asy
   const previous = process.env.OPENCODE_CONFIG_DIR;
   process.env.OPENCODE_CONFIG_DIR = configDir;
   try {
-    const { SuperagentPlugin } = await import('../../.opencode/plugins/superagent.js');
-    const plugin = await SuperagentPlugin({ client: {}, directory: projectDir });
+    const fake = await startPlugin(projectDir);
+    const call = {
+      tool: 'subagent',
+      sessionID: 'ses_1',
+      agent: 'superagent',
+      messageID: 'm',
+      id: 'call_1',
+    };
 
-    await plugin['tool.execute.before'](
-      { tool: 'task', sessionID: 'ses_1', callID: 'call_1' },
-      { args: { subagent_type: 'implementer', description: 'Wire the panel' } },
-    );
+    await fake.fire('tool', 'execute.before', {
+      ...call,
+      input: { agent: 'implementer', description: 'Wire the panel', prompt: 'go' },
+    });
 
     const snapshot = readSnapshot(snapshotPath(configDir, projectDir));
     assert.equal(snapshot.directory, projectDir);
     assert.equal(sessionRecords(snapshot, 'ses_1')[0].agent, 'implementer');
 
-    await plugin['tool.execute.after'](
-      { tool: 'task', sessionID: 'ses_1', callID: 'call_1' },
-      { output: 'done' },
-    );
+    await fake.fire('tool', 'execute.after', {
+      ...call,
+      input: {},
+      status: 'completed',
+      result: { content: [{ type: 'text', text: 'done' }] },
+    });
 
     const after = readSnapshot(snapshotPath(configDir, projectDir));
     assert.equal(sessionRecords(after, 'ses_1')[0].state, 'completed');
@@ -226,11 +243,15 @@ test('a tool call that is not a dispatch writes nothing', async () => {
   const previous = process.env.OPENCODE_CONFIG_DIR;
   process.env.OPENCODE_CONFIG_DIR = configDir;
   try {
-    const { SuperagentPlugin } = await import('../../.opencode/plugins/superagent.js');
-    const plugin = await SuperagentPlugin({ client: {}, directory: projectDir });
+    const fake = await startPlugin(projectDir);
 
-    await plugin['tool.execute.before']({ tool: 'bash', sessionID: 'ses_1' }, { args: {} });
-    await plugin.event({ event: { type: 'message.updated', properties: { sessionID: 'ses_1' } } });
+    await fake.fire('tool', 'execute.before', {
+      tool: 'shell',
+      sessionID: 'ses_1',
+      id: 'c',
+      input: {},
+    });
+    await fake.emit({ type: 'session.execution.succeeded', data: { sessionID: 'ses_1' } });
 
     assert.equal(readSnapshot(snapshotPath(configDir, projectDir)), null);
   } finally {
@@ -251,13 +272,14 @@ test('the panel is not fed when it is switched off', async () => {
   const previous = process.env.OPENCODE_CONFIG_DIR;
   process.env.OPENCODE_CONFIG_DIR = configDir;
   try {
-    const { SuperagentPlugin } = await import('../../.opencode/plugins/superagent.js');
-    const plugin = await SuperagentPlugin({ client: {}, directory: projectDir });
+    const fake = await startPlugin(projectDir);
 
-    await plugin['tool.execute.before'](
-      { tool: 'task', sessionID: 'ses_1', callID: 'call_1' },
-      { args: { subagent_type: 'implementer', description: 'Wire the panel' } },
-    );
+    await fake.fire('tool', 'execute.before', {
+      tool: 'subagent',
+      sessionID: 'ses_1',
+      id: 'call_1',
+      input: { agent: 'implementer', description: 'Wire the panel' },
+    });
 
     assert.equal(readSnapshot(snapshotPath(configDir, projectDir)), null);
   } finally {

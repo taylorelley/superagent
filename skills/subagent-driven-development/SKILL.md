@@ -239,7 +239,8 @@ All three required, else serial:
 1. The plan has a Task Order & Dependencies table.
 2. A wave (the maximal set of tasks with no dependencies on each other) has
    size ≥ 2.
-3. `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` is set.
+3. Background dispatch is available (OpenCode V2's `subagent` tool takes
+   `background: true`).
 
 If worktree creation fails (sandbox/permission), fall back to serial execution
 in place, with a ledger note.
@@ -263,8 +264,9 @@ never touched by a wave implementer.
 
 ### Dispatch
 
-`background: true`, `workdir` = the task's worktree, the same dispatch
-contract as the serial loop (brief path, report path, ownership boundary,
+`background: true`, the task's worktree path stated in the prompt as its
+working directory (the `subagent` tool has no `workdir` parameter), the same
+dispatch contract as the serial loop (brief path, report path, ownership boundary,
 "commit on branch `<plan-basename>/t<N>`"). Dispatch every wave member in one
 message. The job board's ownership conflict check stays live as a second net.
 

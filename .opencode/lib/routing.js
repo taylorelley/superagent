@@ -2,9 +2,10 @@
  * The routing table: the one thing the orchestrator cannot learn from a skill.
  *
  * `subagent-driven-development` tells a controller to choose a *model* for each
- * dispatch. OpenCode's `task` tool has no model parameter, so that instruction
- * cannot be followed literally here — the choice that exists is which *agent*
- * to dispatch. This module renders that translation from the live roster, so
+ * dispatch. OpenCode V2's `subagent` tool does take a `model`, but its own
+ * description tells the model never to set it unless the user asks, and a
+ * guessed model ID fails the dispatch. So the choice Superagent offers is
+ * which *agent* to dispatch — each one already routed to its slot's model. This module renders that translation from the live roster, so
  * the table can never name an agent that was not registered.
  *
  * It is rendered fresh from whatever `agents.js` actually registered, including
@@ -18,19 +19,19 @@ const BUILTINS = [
   { name: 'general', use: 'a multi-step job that fits none of the specialists above' },
 ];
 
-export const renderRoutingTable = (registered, { backgroundAvailable } = {}) => {
+export const renderRoutingTable = (registered) => {
   const workers = registered.filter((entry) => entry.mode !== 'primary');
 
   const lines = [
     '<SUPERAGENT_ROUTING>',
     'This session has a Superagent specialist roster. Route work to it.',
     '',
-    "**Model selection is agent selection.** OpenCode's `task` tool takes no",
-    '`model` parameter, so where `subagent-driven-development` tells you to pick a',
-    'model per dispatch, pick the agent instead — each one below is already routed',
-    'to the model its job deserves.',
+    '**Model selection is agent selection.** Where `subagent-driven-development`',
+    'tells you to pick a model per dispatch, pick the agent instead — each one',
+    'below is already routed to the model its job deserves. Leave the `subagent`',
+    "tool's own `model` unset unless your human partner names a model.",
     '',
-    '| Dispatch `subagent_type` | Use it for |',
+    '| Dispatch `agent` | Use it for |',
     '|---|---|',
     // `routing` is per agent, not per model slot: two agents can share a slot
     // (task-reviewer and re-reviewer both route to `reviewer`) and the
@@ -52,24 +53,17 @@ export const renderRoutingTable = (registered, { backgroundAvailable } = {}) => 
     'Never let two concurrent write-capable dispatches claim the same path.',
   ];
 
-  if (backgroundAvailable) {
-    lines.push(
-      '',
-      '**Background dispatch is available.** Independent work should use',
-      '`background: true` and keep going; you are notified on completion. Do not',
-      'poll, sleep, or ask a running task for status. Dependent work waits for the',
-      'real result — a task that stopped without reporting is not a task that',
-      'succeeded.',
-    );
-  } else {
-    lines.push(
-      '',
-      '**Background dispatch is unavailable** in this session (it needs',
-      '`OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true`). Dispatch independent work',
-      'as several `task` calls in one message, and sequence dependent work. The',
-      'one-writer-per-file rule still applies.',
-    );
-  }
+  // Background dispatch is native to OpenCode V2's `subagent` tool; V1 gated
+  // it behind OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS.
+  lines.push(
+    '',
+    '**Background dispatch is available.** Independent work should use',
+    '`background: true` and keep going; you are notified on completion. Do not',
+    'poll, sleep, or ask a running subagent for status. Dependent work waits for',
+    'the real result — a subagent that stopped without reporting is not one that',
+    'succeeded. To send a running or finished subagent follow-up instructions,',
+    'call `subagent` again with the `sessionID` it returned.',
+  );
 
   lines.push('</SUPERAGENT_ROUTING>');
   return lines.join('\n');

@@ -4,8 +4,8 @@
  * ## Why the element factory is an argument
  *
  * OpenTUI is not a dependency of this package and is not installed anywhere
- * this file can import from — the TUI host hands its own copy to plugins at
- * runtime (see `../tui/superagent-tui.js`). Taking `h` as an argument keeps
+ * this file can import from — the TUI host resolves its own copy for plugins
+ * at runtime (see `../tui/superagent-tui.js`). Taking `h` as an argument keeps
  * this module free of that machinery, so the layout is a pure function of its
  * inputs and can be tested in plain Node with a recording factory.
  *
@@ -68,6 +68,30 @@ const STATE_GLYPH = {
 };
 
 const onOff = (value) => (value ? 'on' : 'off');
+
+/**
+ * Flatten an OpenCode V2 TUI theme into the handful of colours the panel uses.
+ *
+ * V2 themes are semantic tokens (`text.base`, `text.feedback.success.base`,
+ * `text.action.primary.base`, …). The panel only ever needs these seven, and
+ * resolving them in one place keeps `renderPanel` independent of the host's
+ * theme shape. A missing token resolves to undefined, which OpenTUI renders
+ * in the default foreground — never a hardcoded colour.
+ */
+export const panelTheme = (theme) => {
+  const text = theme?.text ?? {};
+  const feedback = text.feedback ?? {};
+  const base = (token) => token?.base ?? token;
+  return {
+    text: text.base,
+    textMuted: text.muted,
+    accent: base(text.action?.primary) ?? base(feedback.info) ?? text.base,
+    info: base(feedback.info),
+    success: base(feedback.success),
+    error: base(feedback.error),
+    warning: base(feedback.warning),
+  };
+};
 
 /**
  * A model id, shortened for a column a few dozen characters wide.

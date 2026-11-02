@@ -6,49 +6,114 @@
  * host logs through `console.error`, which the running terminal UI paints over,
  * so a broken panel is invisible even to someone looking for it.
  *
- * The entry is driven with a stub `api`, which is what the lazy import of the
- * element factory buys — nothing in this file needs OpenTUI or a terminal.
+ * The entry is driven with a stub V2 TUI context and a recording stand-in for
+ * the host's OpenTUI/Solid runtime, which is what loading the runtime lazily
+ * buys — nothing in this file needs OpenTUI or a terminal.
  */
 
 import test from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 
 import entry, {
   createPanelInteractions,
-  createRootRepainter,
-  currentSessionID,
   dispatchState,
   elementFactory,
-  loadElementFactory,
+  loadRuntime,
   newestSessionID,
   panelAgents,
   readVersion,
 } from '../../.opencode/tui/superagent-tui.js';
 import { loadConfig } from '../../.opencode/lib/config-schema.js';
 import { ROSTER } from '../../.opencode/lib/roster.js';
-import { MAX_AGENT_ROWS, MAX_DISPATCH_ROWS } from '../../.opencode/lib/tui-panel.js';
+import { MAX_AGENT_ROWS, MAX_DISPATCH_ROWS, panelTheme } from '../../.opencode/lib/tui-panel.js';
 
 const settings = (over = {}) => {
   const base = loadConfig({ env: {} });
   return { ...base, ...over };
 };
 
-const stubApi = (over = {}) => ({
-  state: { path: { directory: process.cwd() }, config: {} },
-  theme: { current: { text: 'text', textMuted: 'muted' } },
-  renderer: { requestRender: () => {} },
-  lifecycle: { onDispose: () => {} },
-  slots: { register: () => {} },
-  ...over,
+/** A recording OpenTUI-shaped module. */
+const recordingModule = () => ({
+  createElement: (tag) => ({ tag, props: {}, children: [] }),
+  setProp: (node, key, value) => {
+    node.props[key] = value;
+  },
+  insert: (node, child) => node.children.push(child),
 });
+
+/**
+ * A minimal stand-in for the host's Solid runtime: `insert(parent, accessor)`
+ * evaluates the accessor now and again whenever a signal it read changes —
+ * which is the behaviour the panel's liveness depends on.
+ */
+const reactiveRuntime = () => {
+  const mod = recordingModule();
+  let tracking = null;
+  const createSignal = (value) => {
+    const readers = new Set();
+    const read = () => {
+      if (tracking) readers.add(tracking);
+      return value;
+    };
+    const write = (next) => {
+      value = typeof next === 'function' ? next(value) : next;
+      for (const run of [...readers]) run();
+    };
+    return [read, write];
+  };
+  const insert = (parent, accessor) => {
+    if (typeof accessor !== 'function') return parent.children.push(accessor);
+    const run = () => {
+      const previous = tracking;
+      tracking = run;
+      try {
+        parent.children = [accessor()].filter(Boolean);
+      } finally {
+        tracking = previous;
+      }
+    };
+    run();
+  };
+  return { h: elementFactory(mod), insert, createSignal };
+};
+
+/** A stub V2 TUI context that records slot claims. */
+const stubContext = (over = {}) => {
+  const claims = [];
+  const toasts = [];
+  return {
+    claims,
+    toasts,
+    context: {
+      app: { version: '2.2.5' },
+      location: { directory: process.cwd() },
+      theme: { text: { base: 'T', muted: 'M', feedback: { success: { base: 'S' } } } },
+      data: { location: { agent: { sync: async () => {}, list: () => null } } },
+      ui: {
+        slot: (claim) => {
+          claims.push(claim);
+          return () => claims.splice(claims.indexOf(claim), 1);
+        },
+        toast: { show: (t) => toasts.push(t) },
+      },
+      ...over,
+    },
+  };
+};
+
+const textOf = (node) =>
+  typeof node === 'string' ? node : (node?.children ?? []).map((child) => textOf(child)).join(' ');
 
 // ------------------------------------------------------------ module shape
 
-test('the module default-exports the tui plugin OpenCode expects', () => {
-  assert.equal(typeof entry.tui, 'function');
+test('the module default-exports the V2 TUI plugin shape', () => {
+  assert.equal(typeof entry.setup, 'function');
   assert.equal(typeof entry.id, 'string');
-  assert.ok(entry.id.length, 'path plugins are rejected without an id');
-  assert.equal(entry.server, undefined, 'a module exports server() or tui(), never both');
+  assert.ok(entry.id.length, 'a TUI part declares its own id');
+  assert.equal(entry.tui, undefined, 'the V1 tui() entry is gone');
 });
 
 test('the entry imports without OpenTUI present', () => {
@@ -61,16 +126,14 @@ test('the entry imports without OpenTUI present', () => {
 
 test('elementFactory drives the imperative API and skips empty children', () => {
   const created = [];
+  const mod = recordingModule();
   const h = elementFactory({
+    ...mod,
     createElement: (tag) => {
-      const node = { tag, props: {}, children: [] };
+      const node = mod.createElement(tag);
       created.push(node);
       return node;
     },
-    setProp: (node, key, value) => {
-      node.props[key] = value;
-    },
-    insert: (node, child) => node.children.push(child),
   });
 
   const tree = h.box({ width: '100%', missing: undefined }, [
@@ -87,54 +150,34 @@ test('elementFactory drives the imperative API and skips empty children', () => 
   assert.equal(created.length, 3);
 });
 
-test('the element factory degrades to nothing when OpenTUI cannot be reached', async () => {
-  assert.equal(await loadElementFactory(['node:nonexistent-opentui']), null);
+test('the runtime degrades to nothing when OpenTUI or Solid cannot be reached', async () => {
+  assert.equal(await loadRuntime({ solidSpecifiers: ['node:nonexistent-opentui'] }), null);
   assert.equal(
-    await loadElementFactory(['node:fs']),
+    await loadRuntime({ solidSpecifiers: ['node:fs'] }),
     null,
     'a module without createElement is not one',
   );
 });
 
-/** A recording OpenTUI-shaped module, for elementFactory/createRootRepainter tests. */
-const recordingModule = (removalName = 'removeChild') => {
-  const mod = {
-    createElement: (tag) => ({ tag, props: {}, children: [] }),
-    setProp: (node, key, value) => {
-      node.props[key] = value;
+test('panelTheme flattens V2 semantic tokens and never invents a colour', () => {
+  const theme = panelTheme({
+    text: {
+      base: 'B',
+      muted: 'M',
+      action: { primary: { base: 'P' } },
+      feedback: { success: { base: 'S' }, error: { base: 'E' }, info: { base: 'I' } },
     },
-    insert: (node, child) => node.children.push(child),
-  };
-  const removed = [];
-  if (removalName) {
-    mod[removalName] = (parent, child) => {
-      parent.children = parent.children.filter((c) => c !== child);
-      removed.push(child);
-    };
-  }
-  return { mod, removed };
-};
-
-test('elementFactory exposes mount always, and unmount only when a removal export is found', () => {
-  const { mod: withoutRemoval } = recordingModule(null);
-  const h1 = elementFactory(withoutRemoval);
-  assert.equal(typeof h1.mount, 'function');
-  assert.equal(h1.unmount, null, 'no removal export means no unmount capability');
-
-  const { mod: withRemoval, removed } = recordingModule('removeNode');
-  const h2 = elementFactory(withRemoval);
-  const parent = { tag: 'box', props: {}, children: [h2.text({}, ['x'])] };
-  h2.unmount(parent, parent.children[0]);
-  assert.equal(removed.length, 1, 'the discovered removal export was actually called');
-});
-
-test('elementFactory.mount inserts into an existing parent, not just at creation', () => {
-  const { mod } = recordingModule();
-  const h = elementFactory(mod);
-  const parent = h.box({}, []);
-  const child = h.text({}, ['late']);
-  h.mount(parent, child);
-  assert.deepEqual(parent.children, [child]);
+  });
+  assert.deepEqual(theme, {
+    text: 'B',
+    textMuted: 'M',
+    accent: 'P',
+    info: 'I',
+    success: 'S',
+    error: 'E',
+    warning: undefined,
+  });
+  assert.deepEqual(Object.values(panelTheme(undefined)).filter(Boolean), []);
 });
 
 // ---------------------------------------------------------------- version
@@ -142,10 +185,6 @@ test('elementFactory.mount inserts into an existing parent, not just at creation
 test('readVersion reports this package version, and shrugs off a bad root', () => {
   assert.match(readVersion(), /^\d+\.\d+\.\d+/);
   assert.equal(readVersion('/nonexistent'), null);
-});
-
-test('readVersion is re-exported from the shared bridge module', () => {
-  assert.match(readVersion(), /^\d+\.\d+\.\d+/);
 });
 
 // ----------------------------------------------------------------- roster
@@ -187,8 +226,8 @@ test('agents disabled entirely means an empty roster', () => {
   assert.deepEqual(panelAgents({ ...base, agents: { ...base.agents, enabled: false } }, null), []);
 });
 
-test('an agent missing from the resolved config is not claimed as registered', () => {
-  const agents = panelAgents(settings(), { agent: { oracle: {}, librarian: {} } });
+test("an agent missing from the location's agent list is not claimed as registered", () => {
+  const agents = panelAgents(settings(), [{ id: 'build' }, { id: 'oracle' }, { id: 'librarian' }]);
   assert.deepEqual(
     agents.map((a) => a.name),
     ['oracle', 'librarian'],
@@ -197,16 +236,11 @@ test('an agent missing from the resolved config is not claimed as registered', (
 
 // ---------------------------------------------------------------- session
 
-test('the current session comes from the route when there is one', () => {
-  const snapshot = { sessions: { old: { updatedAt: 1 }, fresh: { updatedAt: 9 } } };
-  const api = stubApi({ route: { current: { name: 'session', params: { sessionID: 'routed' } } } });
-
-  assert.equal(currentSessionID(api, undefined, snapshot), 'routed');
-  assert.equal(currentSessionID(stubApi(), { session_id: 'from-props' }, snapshot), 'from-props');
-  assert.equal(currentSessionID(stubApi(), undefined, snapshot), 'fresh', 'falls back to newest');
-});
-
-test('newestSessionID has nothing to pick from an empty snapshot', () => {
+test('newestSessionID picks the most recently touched session, or nothing', () => {
+  assert.equal(
+    newestSessionID({ sessions: { old: { updatedAt: 1 }, fresh: { updatedAt: 9 } } }),
+    'fresh',
+  );
   assert.equal(newestSessionID(null), null);
   assert.equal(newestSessionID({ sessions: {} }), null);
 });
@@ -280,80 +314,30 @@ test('an omitted onChange never throws', () => {
   });
 });
 
-// ------------------------------------------------------------ root repaint
-
-test('createRootRepainter mounts one root the first time and reuses it after', () => {
-  const { mod } = recordingModule();
-  const repainter = createRootRepainter(elementFactory(mod));
-  assert.equal(repainter.ensureRoot(), repainter.ensureRoot());
-});
-
-test('patch replaces the mounted child in place when a removal primitive exists', () => {
-  const { mod, removed } = recordingModule();
-  const h = elementFactory(mod);
-  const repainter = createRootRepainter(h);
-  const root = repainter.ensureRoot();
-
-  const childA = h.text({}, ['a']);
-  assert.equal(repainter.patch(childA), true);
-  assert.deepEqual(root.children, [childA]);
-
-  const childB = h.text({}, ['b']);
-  assert.equal(repainter.patch(childB), true);
-  assert.deepEqual(root.children, [childB], 'the old child is gone, the new one took its place');
-  assert.deepEqual(removed, [childA]);
-});
-
-test('patch is a no-op before ensureRoot has run', () => {
-  const { mod } = recordingModule();
-  const h = elementFactory(mod);
-  assert.equal(createRootRepainter(h).patch(h.text({}, ['x'])), false);
-});
-
-test('without a removal primitive, only the first patch takes effect', () => {
-  const { mod } = recordingModule(null);
-  const h = elementFactory(mod);
-  const repainter = createRootRepainter(h);
-  repainter.ensureRoot();
-
-  assert.equal(repainter.patch(h.text({}, ['a'])), true, 'the first paint always happens');
-  assert.equal(
-    repainter.patch(h.text({}, ['b'])),
-    false,
-    'nothing to remove the first child with, so a second patch is refused rather than stacking',
-  );
-});
-
 // ------------------------------------------------------------ registration
 
-test('the panel is not registered when OpenTUI is unavailable, and does not throw', async () => {
-  let registered = 0;
-  await entry.tui(stubApi({ slots: { register: () => (registered += 1) } }), undefined, {});
-  assert.equal(registered, 0, 'a panel that cannot render must not be registered');
+test('the panel is not registered when the runtime is unavailable, and does not throw', async () => {
+  const { context, claims } = stubContext();
+  const cleanup = await entry.setup(context, { loadRuntime: async () => null });
+  assert.equal(claims.length, 0, 'a panel that cannot render must not be registered');
+  assert.equal(cleanup, undefined);
 });
 
-// ---------------------------------------------- live-host confirmed bugs
-//
-// Both regressions below were confirmed against a real installed OpenCode +
-// `@opentui/solid`: (1) `createElement` throws `Error: No renderer found`
-// when called from outside the host's own synchronous `sidebar_content`
-// invocation — a poll tick or click qualifies as "outside"; (2) the real
-// module exports none of `remove`/`removeChild`/`removeNode`/`unmount`. See
-// docs/superagent.md.
-
-test('sidebar_content builds a fresh root on every invocation, not a reused one', async () => {
-  const { mod } = recordingModule();
-  let registeredSlots;
-  const api = stubApi({ slots: { register: (opts) => (registeredSlots = opts.slots) } });
-
-  await entry.tui(api, undefined, {}, { loadElementFactory: async () => elementFactory(mod) });
-
-  const rootA = registeredSlots.sidebar_content({ theme: { current: {} } });
-  const rootB = registeredSlots.sidebar_content({ theme: { current: {} } });
-  assert.notEqual(rootA, rootB, 'a stale root from a torn-down view must never be handed back');
+test('the panel claims sidebar.content and renders for the slot session', async () => {
+  const { context, claims } = stubContext();
+  const cleanup = await entry.setup(context, { loadRuntime: async () => reactiveRuntime() });
+  try {
+    assert.equal(claims.length, 1);
+    assert.equal(claims[0].append, 'sidebar.content');
+    const root = claims[0].render({ sessionID: 'ses_x' });
+    assert.match(textOf(root), /Superagent/);
+  } finally {
+    await cleanup();
+  }
+  assert.equal(claims.length, 0, 'cleanup should release the slot claim');
 });
 
-/** Finds the first node in a recording-module tree with an onMouseDown handler. */
+/** Finds the first node in a recording tree with an onMouseDown handler. */
 const findClickable = (node) => {
   if (node?.props?.onMouseDown) return node;
   for (const child of node?.children ?? []) {
@@ -363,51 +347,71 @@ const findClickable = (node) => {
   return null;
 };
 
-test('a repaint reached from outside sidebar_content (poll/click) cannot crash the session', async () => {
-  // Simulates the confirmed live-host failure: createElement throws once the
-  // host's own render pass for that `sidebar_content` call has ended — which
-  // is exactly when a poll tick or a click handler fires.
-  let insideRenderPass = true;
-  const throwingMod = {
-    createElement: (tag) => {
-      if (!insideRenderPass) throw new Error('No renderer found');
-      return { tag, props: {}, children: [] };
+test('a click re-renders the panel in place through the reactive insert', async () => {
+  const { context, claims } = stubContext();
+  const cleanup = await entry.setup(context, { loadRuntime: async () => reactiveRuntime() });
+  try {
+    const root = claims[0].render({ sessionID: 'ses_x' });
+    const before = root.children[0];
+    const clickable = findClickable(root);
+    assert.ok(clickable, 'the Agents header should have registered a click handler');
+    clickable.props.onMouseDown();
+    assert.notEqual(root.children[0], before, 'the click did not repaint the panel');
+    assert.equal(root.children.length, 1, 'a repaint must replace the tree, not stack another');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a render failure degrades to an empty panel instead of crashing the TUI', async () => {
+  const runtime = reactiveRuntime();
+  const broken = {
+    ...runtime,
+    h: {
+      box: runtime.h.box,
+      text: () => {
+        throw new Error('No renderer found');
+      },
     },
-    setProp: (node, key, value) => {
-      node.props[key] = value;
-    },
-    insert: (node, child) => node.children.push(child),
   };
-
-  let registeredSlots;
-  const api = stubApi({ slots: { register: (opts) => (registeredSlots = opts.slots) } });
-  await entry.tui(
-    api,
-    undefined,
-    {},
-    { loadElementFactory: async () => elementFactory(throwingMod) },
-  );
-
-  // The initial, host-driven call is the one confirmed-safe place to render.
-  const root = registeredSlots.sidebar_content({ theme: { current: {} } });
-  const clickable = findClickable(root);
-  assert.ok(clickable, 'the Agents header should have registered a click handler');
-
-  // A click fires later, outside that call stack, on the real host.
-  insideRenderPass = false;
-  assert.doesNotThrow(() => clickable.props.onMouseDown());
+  const { context, claims } = stubContext();
+  const cleanup = await entry.setup(context, { loadRuntime: async () => broken });
+  try {
+    assert.doesNotThrow(() => claims[0].render({ sessionID: 'ses_x' }));
+  } finally {
+    await cleanup();
+  }
 });
 
 test('the panel is not registered when it is switched off', async () => {
-  let registered = 0;
-  const api = stubApi({ slots: { register: () => (registered += 1) } });
-
+  const { context, claims } = stubContext();
   process.env.SUPERAGENT_DISABLE = '1';
   try {
-    await entry.tui(api, undefined, {});
+    await entry.setup(context, { loadRuntime: async () => reactiveRuntime() });
   } finally {
     delete process.env.SUPERAGENT_DISABLE;
   }
+  assert.equal(claims.length, 0);
+});
 
-  assert.equal(registered, 0);
+test('a preset persisted while the panel runs is picked up without a restart', async () => {
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'superagent-tui-cfg-'));
+  const saved = process.env.OPENCODE_CONFIG_DIR;
+  process.env.OPENCODE_CONFIG_DIR = configDir;
+  const { context, claims } = stubContext({
+    location: { directory: fs.mkdtempSync(path.join(os.tmpdir(), 'superagent-tui-proj-')) },
+  });
+  const cleanup = await entry.setup(context, { loadRuntime: async () => reactiveRuntime() });
+  try {
+    const root = claims[0].render({ sessionID: 'ses_x' });
+    assert.match(textOf(root), /team/);
+    fs.writeFileSync(path.join(configDir, 'superagent.state.json'), '{"preset": "solo"}');
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+    assert.match(textOf(root), /solo/, 'the panel kept the preset it started with');
+    assert.match(textOf(root), /agents off/);
+  } finally {
+    await cleanup();
+    if (saved === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+    else process.env.OPENCODE_CONFIG_DIR = saved;
+  }
 });

@@ -107,7 +107,9 @@ run_opencode() {
     local exit_code
 
     set +e
-    command_output=$(cd "$dir" && timeout "${OPENCODE_TEST_TIMEOUT_SECONDS}s" opencode run --print-logs --format json "$prompt" 2>&1)
+    # `opencode run` reads a piped stdin as part of the message, so a test
+    # harness that leaves stdin open would hang until the timeout.
+    command_output=$(cd "$dir" && timeout "${OPENCODE_TEST_TIMEOUT_SECONDS}s" opencode run --print-logs --format json "$prompt" 2>&1 < /dev/null)
     exit_code=$?
     set -e
 
@@ -174,7 +176,7 @@ echo ""
 echo "Test 2: Documenting personal vs superagent priority..."
 echo "  Running from outside project directory..."
 
-run_opencode output "$HOME" "Call the skill tool with name \"priority-test\". Show the exact content including any PRIORITY_MARKER text."
+run_opencode output "$HOME" "Call the skill tool with id \"priority-test\". Show the exact content including any PRIORITY_MARKER text."
 describe_priority_result \
     "$output" \
     "PRIORITY_MARKER_PERSONAL_VERSION" \
@@ -187,7 +189,7 @@ echo ""
 echo "Test 3: Documenting project vs personal/superagent priority..."
 echo "  Running from project directory..."
 
-run_opencode output "$TEST_HOME/test-project" "Call the skill tool with name \"priority-test\". Show the exact content including any PRIORITY_MARKER text."
+run_opencode output "$TEST_HOME/test-project" "Call the skill tool with id \"priority-test\". Show the exact content including any PRIORITY_MARKER text."
 describe_priority_result \
     "$output" \
     "PRIORITY_MARKER_PROJECT_VERSION" \
@@ -210,7 +212,7 @@ description: Superagent-only priority test skill
 PRIORITY_MARKER_SUPERAGENT_ONLY_VERSION
 EOF
 
-run_opencode output "$TEST_HOME/test-project" "Call the skill tool with name \"superagent-only-test\". Show the exact content including any PRIORITY_MARKER text."
+run_opencode output "$TEST_HOME/test-project" "Call the skill tool with id \"superagent-only-test\". Show the exact content including any PRIORITY_MARKER text."
 assert_contains "$output" "PRIORITY_MARKER_SUPERAGENT_ONLY_VERSION" "Non-colliding superagent skill is still registered"
 
 echo ""

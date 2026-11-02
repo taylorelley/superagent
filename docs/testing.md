@@ -9,7 +9,8 @@ Superagent has two distinct kinds of tests, each in its own directory:
 
 Live in `tests/`. Currently:
 
-- `tests/opencode/` — bash + node tests for OpenCode plugin loading, bootstrap caching, the Superagent roster, the job board, and the single-source tool map.
+- `tests/opencode/` — bash + node tests for OpenCode plugin loading, bootstrap caching, the Superagent roster, the job board, the TUI panel, and the single-source tool map. They drive the plugin's OpenCode 2 `setup(ctx)` against `tests/opencode/fake-v2-context.mjs`, a fake plugin context that replays transforms the way OpenCode does, so they need no binary.
+- `tests/opencode/test-tools.sh` and `test-priority.sh` (`run-tests.sh --integration`) run a real OpenCode 2 and need a model. Any provider works, including a local OpenAI-compatible one injected with `OPENCODE_CONFIG_CONTENT`.
 - `tests/brainstorm-server/` — node test suite for the brainstorm server JS code.
 - `tests/systematic-debugging/` — bash tests for the `find-polluter` helper.
 - `tests/writing-skills/` — bash tests for the graph renderer.
