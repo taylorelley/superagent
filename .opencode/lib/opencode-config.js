@@ -45,12 +45,22 @@ export const defaultAgentConfigured = (options) =>
     (config) => typeof config.default_agent === 'string' && config.default_agent,
   );
 
+/**
+ * Whether a plugin target names this package — `superagent` as a whole path
+ * segment or package name (`github:taylorelley/superagent#main`,
+ * `superagent@git+…`, `/x/node_modules/superagent`), not merely containing it
+ * (`superagent-tools`, `my-superagent`).
+ */
+export const isSuperagentTarget = (target) =>
+  /(^|[/:])superagent(\.git)?($|[#@/]|::)/i.test(String(target).replace(/\\/g, '/'));
+
 /** The configured plugin target (`github:…`, a path, a package spec) that is Superagent, if any. */
 export const superagentPluginTarget = (options) => {
   for (const config of readAll(options).reverse()) {
-    for (const entry of [...(config.plugins ?? []), ...(config.plugin ?? [])]) {
+    const listed = [config.plugins, config.plugin].flatMap((v) => (Array.isArray(v) ? v : []));
+    for (const entry of listed) {
       const target = typeof entry === 'string' ? entry : (entry?.package ?? entry?.[0]);
-      if (typeof target === 'string' && /superagent/i.test(target)) return target;
+      if (typeof target === 'string' && isSuperagentTarget(target)) return target;
     }
   }
   return null;

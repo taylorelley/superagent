@@ -716,11 +716,24 @@ test('/preset --persist applies the preset and is honest about the running sessi
       onPresetPersist: (name) => applied.push(name),
     });
     assert.deepEqual(applied, ['solo']);
-    assert.match(text, /reloaded its agents and commands/);
+    assert.match(text, /is reloading its agents and commands/);
     // A session keeps the agent and model it selected; saying "switched"
     // without this would leave the user believing they are on a model they
     // are not on.
     assert.match(text, /keeps the agent and model it already selected/);
+  });
+});
+
+test('/preset --persist reports a failed write as a failure, not a missing flag', () => {
+  withTempDir((dir) => {
+    const blocker = path.join(dir, 'blocker');
+    fs.writeFileSync(blocker, 'not a directory');
+    const text = expandCommand('preset', 'solo --persist', {
+      settings: loadConfig({ env: {} }),
+      configDir: path.join(blocker, 'config'),
+    });
+    assert.match(text, /could not be saved/);
+    assert.ok(!/Re-run as/.test(text), 'told the user to re-run the command that just failed');
   });
 });
 

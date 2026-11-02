@@ -71,7 +71,7 @@ const setup = async (ctx) => {
   );
   const unwatchSkills = watchSkills(skillsDir, () => {
     skills = discoverSkills(skillsDir);
-    void ctx.skill.reload();
+    void guard('skill reload', () => ctx.skill.reload());
   });
 
   await ctx.agent.transform((editor) =>
@@ -96,8 +96,7 @@ const setup = async (ctx) => {
   const applyPreset = () => {
     settings = load();
     members = usableMembers(settings.council);
-    void ctx.agent.reload();
-    void ctx.command.reload();
+    void guard('preset reload', () => Promise.all([ctx.agent.reload(), ctx.command.reload()]));
   };
 
   // Commands expand at execution, because the expansion depends on state a
@@ -110,10 +109,11 @@ const setup = async (ctx) => {
           name,
           description,
           execute: guardHook(`/${name}`, async ({ sessionID, prompt, delivery }) => {
-            const text = expandCommand(name, prompt?.text ?? '', {
+            const text = await expandCommand(name, prompt?.text ?? '', {
               settings,
               councillors: state.councillors,
               configDir,
+              projectDir: directory,
               sessionID,
               onPresetPersist: applyPreset,
             });

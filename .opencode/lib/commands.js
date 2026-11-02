@@ -126,6 +126,16 @@ const presetReport = (settings, args, configDir, onPersist) => {
     }
   }
 
+  if (persist && !persisted) {
+    return [
+      `Preset "${name}" could not be saved, so nothing changed.`,
+      '',
+      'Check that the OpenCode config directory is writable; the plugin log has the error.',
+      '',
+      'Tell your human partner exactly this and stop. Do not take any other action.',
+    ].join('\n');
+  }
+
   if (!persisted) {
     return [
       `Preset "${name}" was not saved, so nothing changed.`,
@@ -151,7 +161,7 @@ const presetReport = (settings, args, configDir, onPersist) => {
     `Preset "${name}" saved.`,
     '',
     applied
-      ? 'Superagent reloaded its agents and commands with it. **This session keeps the agent and model it already selected**; new dispatches and new sessions use the new definitions.'
+      ? 'Superagent is reloading its agents and commands with it. **This session keeps the agent and model it already selected**; new dispatches and new sessions use the new definitions.'
       : '**It takes effect after `opencode service restart`.** Agent definitions — which agents exist, and which model each one is routed to — are registered when the plugin loads.',
     '',
     'Tell your human partner exactly this and stop. Do not take any other action.',
@@ -166,22 +176,24 @@ const presetReport = (settings, args, configDir, onPersist) => {
  * (`update-install.js`) and is honest that the change is not live until the
  * OpenCode service restarts: plugin code is imported once when it loads.
  */
-const updateReport = (args, configDir) => {
-  const [action] = args.trim().split(/\s+/).filter(Boolean);
+/** `/update install`: runs the installer, so it is the one asynchronous expansion. */
+const installReport = async (configDir, projectDir) => {
+  const result = await performUpdate({ configDir, projectDir });
+  return [
+    result.ok
+      ? `Update installed (${result.method}).`
+      : `Update failed (${result.method}): ${result.error}`,
+    '',
+    '**This does not take effect until the OpenCode service restarts** (`opencode service restart`).',
+    'Plugin code is imported once, when the plugin loads.',
+    '',
+    'Tell your human partner exactly this and stop. Do not take any other action.',
+  ].join('\n');
+};
 
-  if (action === 'install') {
-    const result = performUpdate({ configDir });
-    return [
-      result.ok
-        ? `Update installed (${result.method}).`
-        : `Update failed (${result.method}): ${result.error}`,
-      '',
-      '**This does not take effect until the OpenCode service restarts** (`opencode service restart`).',
-      'Plugin code is imported once, when the plugin loads.',
-      '',
-      'Tell your human partner exactly this and stop. Do not take any other action.',
-    ].join('\n');
-  }
+const updateReport = (args, configDir, projectDir) => {
+  const [action] = args.trim().split(/\s+/).filter(Boolean);
+  if (action === 'install') return installReport(configDir, projectDir);
 
   const cache = readCache(cachePath(configDir));
   if (!cache) {
@@ -207,12 +219,14 @@ const updateReport = (args, configDir) => {
 /**
  * Rewrite a command into its real instruction.
  *
- * Returns the replacement text, or null to leave the command alone.
+ * Returns the replacement text, or null to leave the command alone. `/update
+ * install` returns a promise of the text, since it runs the installer; callers
+ * `await` the result either way.
  */
 export const expandCommand = (
   command,
   args,
-  { settings, councillors, configDir, sessionID, onPresetPersist },
+  { settings, councillors, configDir, projectDir, sessionID, onPresetPersist },
 ) => {
   if (command === 'council') {
     return councilInstruction(councillors ?? [], (args ?? '').trim());
@@ -232,7 +246,7 @@ export const expandCommand = (
   }
 
   if (command === 'update') {
-    return updateReport(args ?? '', configDir);
+    return updateReport(args ?? '', configDir, projectDir);
   }
 
   return null;
