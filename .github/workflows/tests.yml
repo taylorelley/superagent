@@ -31,6 +31,9 @@ jobs:
       - name: Version-bump script tests
         run: bash tests/version-bump/test-bump-version.sh
 
+      - name: Release version tests
+        run: bash tests/release/test-next-version.sh
+
       - name: systematic-debugging find-polluter tests
         run: bash tests/systematic-debugging/test-find-polluter.sh
 

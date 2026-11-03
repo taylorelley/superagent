@@ -1,0 +1,118 @@
+name: Release
+
+# Cuts a CalVer release (YYYY.M.MICRO, see scripts/next-version.sh) for every
+# push to main that passes the Tests workflow: bumps package.json and
+# package-lock.json, commits that to main, tags it vYYYY.M.MICRO, and
+# publishes a GitHub Release with generated notes. The plugin's update check
+# reads releases/latest, so a release is what tells installed copies an
+# update exists.
+#
+# Skip a release by putting [skip release] in the merge commit message.
+#
+# The bump commit carries [skip ci], so it never runs Tests and so never
+# triggers another release. If main is protected against direct pushes, add a
+# RELEASE_TOKEN secret (a fine-grained PAT or GitHub App token with contents:
+# write that may bypass the protection); without one the default GITHUB_TOKEN
+# is used.
+
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+# One release at a time, in order, so two merges never claim the same number.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag and publish a release
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      !contains(github.event.workflow_run.head_commit.message, '[skip release]')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Release only the commit that was tested. If main has moved on, the
+      # newer push has its own Tests run, and that run's release covers this
+      # commit too.
+      - name: Check main is still the tested commit
+        id: guard
+        env:
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          head="$(git rev-parse HEAD)"
+          if [[ "$head" != "$TESTED_SHA" ]]; then
+            echo "::notice::main is at $head, not the tested $TESTED_SHA; the newer push will release."
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Choose the version
+        id: version
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          version="$(bash scripts/next-version.sh)"
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "::error::tag v$version already exists"
+            exit 1
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "Releasing v$version"
+
+      - name: Bump, commit and tag
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          bash scripts/bump-version.sh "$VERSION"
+          # bump-version.sh owns the declared manifests; npm keeps the
+          # lockfile's two copies of the root version in step with them.
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          bash scripts/bump-version.sh --check
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release v$VERSION [skip ci]"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+
+      - name: Push
+        id: push
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git push --atomic origin HEAD:main "v$VERSION"; then
+            exit 0
+          fi
+          # A merge landed between checkout and push. Its own Tests run will
+          # release it, with this commit included, so stand down cleanly.
+          git fetch origin main
+          if [[ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD~1)" ]]; then
+            echo "::notice::main moved during the release; the newer push will release."
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::error::push failed and main has not moved; check branch protection and RELEASE_TOKEN."
+          exit 1
+
+      - name: Publish the GitHub Release
+        if: steps.guard.outputs.skip != 'true' && steps.push.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release create "v$VERSION" --verify-tag --generate-notes --title "v$VERSION"

@@ -433,6 +433,13 @@ one yet. The result is cached to
 one request. Nothing about the user or the project is sent — the request asks
 "what's the latest version," full stop.
 
+Versions are CalVer, `YYYY.M.MICRO` (for example `2026.11.0`, then
+`2026.11.1`): the year, the unpadded month, and a counter that resets each
+month. Every merge to `main` that passes CI is released automatically by
+`.github/workflows/release.yml`, which bumps `package.json`, tags the commit
+`vYYYY.M.MICRO`, and publishes a GitHub Release. See
+[Releasing](../.github/RELEASING.md).
+
 When a newer version is found:
 
 - The sidebar panel (`## The sidebar panel` above) gains a line —

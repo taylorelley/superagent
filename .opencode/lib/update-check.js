@@ -23,8 +23,9 @@ export const cachePath = (configDir) =>
  * Compare two `x.y.z`-style version strings.
  *
  * Missing parts are treated as 0, so "1.2" equals "1.2.0". A non-numeric part
- * compares as 0 — good enough for this project's plain semver, and it never
- * throws on a malformed string from a broken fetch.
+ * compares as 0 — good enough for this project's CalVer `YYYY.M.MICRO`
+ * versions (which also sort above the old `0.x` line), and it never throws on a
+ * malformed string from a broken fetch.
  */
 export const compareVersions = (a, b) => {
   const parts = (v) =>
