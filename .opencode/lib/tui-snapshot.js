@@ -31,7 +31,7 @@ import { createHash } from 'crypto';
 import { warn, debug } from './log.js';
 import { packageRoot } from './paths.js';
 
-export const SNAPSHOT_VERSION = 2;
+export const SNAPSHOT_VERSION = 3;
 
 /** Sessions retained per project. Older ones are dropped on write. */
 export const MAX_SESSIONS = 20;

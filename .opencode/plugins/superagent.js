@@ -176,8 +176,8 @@ const setup = async (ctx) => {
       if (result?.updateAvailable) publishBoard();
     });
 
-  // Background dispatches return as soon as the child starts, so their outcome
-  // arrives as a lifecycle event on the child session.
+  // Child-session lifecycle: a new child is linked to its dispatch (for the
+  // panel); a background dispatch's outcome arrives as the child's end event.
   const controller = new AbortController();
   void guard('event subscription', async () => {
     const types = ['session.created', ...Object.keys(board.TERMINAL_EVENTS)];
@@ -185,9 +185,9 @@ const setup = async (ctx) => {
       if (event.type === 'session.created') {
         if (!updateChecked) void checkUpdate();
         updateChecked = true;
-      } else if (board.onSessionEvent(event.type, event.data?.sessionID)) {
-        publishBoard();
       }
+      if (board.onSessionEvent(event.type, event.data?.sessionID, event.data, settings))
+        publishBoard();
     }
   });
 

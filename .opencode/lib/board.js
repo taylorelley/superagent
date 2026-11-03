@@ -77,6 +77,11 @@ export const onDispatch = (sessionID, callID, args, settings) => {
     ownership,
     startedAt: Date.now(),
     result: null,
+    // A follow-up to an existing subagent names its child session up front,
+    // and no `session.created` fires for a session that already exists.
+    ...(typeof args?.sessionID === 'string' && args.sessionID
+      ? { childSessionID: args.sessionID }
+      : {}),
   };
 
   if (ownership?.write?.length && settings.board.enforceOwnership === 'warn') {
@@ -102,6 +107,17 @@ export const resultText = (result) => {
     .map((part) => part.text)
     .join('\n');
 };
+
+/**
+ * A `subagent` result without its envelope. OpenCode 2 wraps the child's
+ * answer as `<subagent sessionID="…" state="completed">…</subagent>`
+ * (confirmed against 2.2.5); the wrapper is bookkeeping, the body is the
+ * answer a human wants to see.
+ */
+export const unwrapSubagent = (text) =>
+  String(text ?? '')
+    .replace(/^\s*<subagent\b[^>]*>\s*/, '')
+    .replace(/\s*<\/subagent>\s*$/, '');
 
 /** The child session a background dispatch reported, if it reported one. */
 const BACKGROUND_SESSION = /\(sessionID:\s*([^)\s]+)\)/;
@@ -151,7 +167,7 @@ export const onDispatchResult = (sessionID, callID, outcome, settings) => {
 
   record.state = 'completed';
   record.endedAt = Date.now();
-  record.result = truncate(resultText(result));
+  record.result = truncate(unwrapSubagent(resultText(result)));
 };
 
 /**
@@ -167,8 +183,13 @@ export const TERMINAL_EVENTS = {
   'session.deleted': 'cancelled',
 };
 
-export const onSessionEvent = (type, sessionID) => {
+export const onSessionEvent = (type, sessionID, data, settings) => {
   if (!sessionID) return false;
+  // A new child session links to the dispatch that started it (see
+  // `onChildCreated`); `data` is the event payload.
+  if (type === 'session.created') {
+    return onChildCreated(data?.parentID, sessionID, data?.agent, data?.title, settings);
+  }
   const terminal = TERMINAL_EVENTS;
   const state = terminal[type];
   if (!state) return false;
@@ -219,10 +240,50 @@ export const boardSnapshots = () => {
         owns: r.ownership?.write ?? [],
         startedAt: r.startedAt,
         ...(r.endedAt ? { endedAt: r.endedAt } : {}),
+        // The child session, so the panel can join a record to the host's
+        // live view of what that subagent is doing.
+        ...(r.childSessionID ? { childSessionID: r.childSessionID } : {}),
+        // What came back, one line's worth: the panel shows it under a
+        // finished row, so a human can see an outcome without scrolling.
+        ...(r.result ? { result: truncate(r.result, 120) } : {}),
+        // Which running dispatches this one overlapped when it started — the
+        // collision the human most needs to see, by agent name.
+        ...(r.conflicts?.length
+          ? {
+              conflicts: r.conflicts.map((id) => board.records.get(id)?.agent ?? 'unknown'),
+            }
+          : {}),
       })),
     };
   }
   return out;
+};
+
+/**
+ * Link a dispatch to the child session it started.
+ *
+ * Background dispatches report their child in the tool result; foreground
+ * ones only reveal it through `session.created`, whose payload carries the
+ * `parentID`, the `agent` and — as its title — the dispatch description
+ * (confirmed against OpenCode 2.2.5). The oldest still-running, still-unlinked
+ * record in the parent with the same agent and objective is the match.
+ *
+ * Returns whether a record was linked.
+ */
+export const onChildCreated = (parentID, childID, agent, title, settings) => {
+  if (!settings?.board?.enabled || !parentID || !childID) return false;
+  const board = boards.get(parentID);
+  if (!board) return false;
+  const objective = truncate(title, 80);
+  const candidates = [...board.records.values()].filter(
+    (r) => r.state === 'running' && !r.childSessionID && (!agent || r.agent === agent),
+  );
+  // Agent and title must both match: a lone running dispatch is not evidence
+  // that an unrelated child session (another plugin's, say) belongs to it.
+  const match = candidates.find((r) => r.objective === objective);
+  if (!match) return false;
+  match.childSessionID = childID;
+  return true;
 };
 
 /** Render the board, or null when there is nothing worth showing. */

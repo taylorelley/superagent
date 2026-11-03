@@ -42,6 +42,13 @@ import path from 'path';
 import { ROSTER } from '../lib/roster.js';
 import { renderPanel, panelTheme, MAX_AGENT_ROWS, MAX_DISPATCH_ROWS } from '../lib/tui-panel.js';
 import { snapshotPath, readSnapshot, sessionRecords, readVersion } from '../lib/tui-snapshot.js';
+import {
+  sessionData,
+  mainActivity,
+  childActivities,
+  sessionPlanPath,
+  planProgress,
+} from '../lib/tui-activity.js';
 import { debug, warn } from '../lib/log.js';
 
 export { readVersion };
@@ -204,6 +211,35 @@ const mtimeOf = (target) => {
 };
 
 /**
+ * Progress through the plan a session is working from, re-read only when the
+ * plan file moves. `planPath` comes from the session's own tool calls (see
+ * `findPlanPath`); a relative one is resolved against the project directory.
+ */
+export const createPlanReader = (directory, { stat = mtimeOf, read = fs.readFileSync } = {}) => {
+  let cached = { file: null, mtime: 0, plan: null };
+  return (planPath) => {
+    if (!planPath) return null;
+    const file = path.isAbsolute(planPath) ? planPath : path.join(directory, planPath);
+    const mtime = stat(file);
+    if (!mtime) return null;
+    if (cached.file !== file || cached.mtime !== mtime) {
+      let progress = null;
+      try {
+        progress = planProgress(read(file, 'utf8'));
+      } catch (err) {
+        debug(`tui panel: could not read plan ${file}: ${err.message}`);
+      }
+      cached = {
+        file,
+        mtime,
+        plan: progress ? { name: path.basename(file), ...progress } : null,
+      };
+    }
+    return cached.plan;
+  };
+};
+
+/**
  * `deps` is not part of OpenCode's call signature — it is an injection seam
  * so tests can hand `setup` a recording runtime instead of the host's.
  */
@@ -270,15 +306,35 @@ const setup = async (context, deps = {}) => {
   };
   announceUpdate();
 
+  // The host's own session store: what the main agent and each subagent are
+  // doing right now. Reactive, so reading it inside the insert keeps it live.
+  const data = sessionData(context);
+  const readPlan = createPlanReader(directory);
+  // Whether the last render showed anything running: its timers need a
+  // repaint every second even when no file has moved.
+  let active = false;
+
   const build = (sessionID) => {
     const current = sessionID || newestSessionID(snapshot);
+    const records = sessionRecords(snapshot, current);
+    const main = sessionID ? mainActivity(data, sessionID) : null;
+    const children = childActivities(data, current);
+    const plan = readPlan(sessionPlanPath(data, current));
+    active =
+      main?.state === 'running' ||
+      children.some((child) => child.state === 'running') ||
+      records.some((record) => record.state === 'running');
     return renderPanel(
       {
         version,
         preset: settings.preset,
         subsystems: subsystemsOf(settings),
         agents: panelAgents(settings, agentData?.list?.(location) ?? null),
-        records: sessionRecords(snapshot, current),
+        records,
+        children,
+        main,
+        plan,
+        now: Date.now(),
         snapshotState: dispatchState({ hasFile: stamp > 0, snapshot, panelVersion: version }),
         pluginVersion: snapshot?.pluginVersion ?? null,
         updateAvailable: snapshot?.updateAvailable ?? false,
@@ -300,7 +356,10 @@ const setup = async (context, deps = {}) => {
   const poll = () => {
     const mtime = mtimeOf(file);
     const nextConfig = settingsStamp();
-    if (mtime === stamp && nextConfig === configStamp) return;
+    if (mtime === stamp && nextConfig === configStamp) {
+      if (active) bump();
+      return;
+    }
     if (nextConfig !== configStamp) {
       configStamp = nextConfig;
       settings = loadConfig({ configDir, projectDir: directory });

@@ -16,11 +16,17 @@
  * addressed to the human, and `/board` costs a model turn to read back. This
  * panel is the human's copy: always visible, always current, free.
  *
+ * It answers, top to bottom, what the plan is, what the main agent is doing,
+ * and what each subagent is doing — the things the main pane either scrolls
+ * away or never shows (a subagent's own tool calls live in its child session).
+ * Configuration is one footer line: it rarely changes, so it earns no more.
+ *
  * Colours only ever come from the caller's theme. Hardcoding one would look
  * deliberate on the theme it was picked for and broken on every other.
  */
 
 import { truncate } from './board.js';
+import { formatElapsed } from './tui-activity.js';
 
 /**
  * Row budgets.
@@ -47,13 +53,35 @@ export const MAX_DISPATCH_ROWS = 5;
  */
 export const OBJECTIVE_MAX = 30;
 
-/** `truncate` spends its budget before the ellipsis; a column includes it. */
-const fit = (text, max) => truncate(text, max - 1);
+/**
+ * Fit text to a column of `max` characters, ellipsis included. `truncate`
+ * spends its budget before the ellipsis, so it gets one less — but only when
+ * truncating: text exactly `max` long already fits.
+ */
+const fit = (text, max) => {
+  const clean = truncate(text, Number.MAX_SAFE_INTEGER);
+  return clean.length <= max ? clean : truncate(clean, Math.max(0, max - 1));
+};
 
 /** A slot with no model pinned inherits the session's, which is worth saying. */
 const INHERIT = 'inherit';
 
+/**
+ * The sidebar's text column, in characters. Measured in OpenCode 2.2.5's TUI:
+ * the content area inside the panel's padding is 35 wide, and a row whose two
+ * halves add up to more runs them together (`10 agentsv0.1.0`) rather than
+ * wrapping. A row's left half is fitted to whatever its right half leaves.
+ */
+export const PANEL_WIDTH = 35;
+
+/**
+ * Detail lines (live tool, ownership, conflicts) are only drawn for this many
+ * running subagents. Each can take four lines, and the sidebar is short.
+ */
+export const MAX_DETAILED_RUNNING = 3;
+
 const STATE_COLOR = {
+  idle: 'textMuted',
   running: 'info',
   completed: 'success',
   error: 'error',
@@ -66,8 +94,6 @@ const STATE_GLYPH = {
   error: '✗',
   cancelled: '○',
 };
-
-const onOff = (value) => (value ? 'on' : 'off');
 
 /**
  * Flatten an OpenCode V2 TUI theme into the handful of colours the panel uses.
@@ -118,6 +144,59 @@ const orderRecords = (records) =>
 const orderAgents = (agents) =>
   [...agents].sort((a, b) => Number(Boolean(b.model)) - Number(Boolean(a.model)));
 
+/**
+ * Join the board's records to the host's child sessions.
+ *
+ * A record carries its child's session id once the server has linked it; a
+ * record that was never linked (an older server, a missed event) falls back
+ * to the running child with the same agent and title. Running children no
+ * record accounts for — the board switched off, say — still get a row, since
+ * "something is running" is never noise.
+ */
+const joinChildren = (records, children) => {
+  const byID = new Map(children.map((child) => [child.id, child]));
+  const used = new Set();
+  // Only running records join a child: a finished row needs no live data, and
+  // a child resumed by a follow-up dispatch is still named by the finished
+  // record that first started it — that record must not claim it.
+  const rows = records.map((record) => {
+    if (record.state !== 'running') return { ...record };
+    let child = record.childSessionID ? byID.get(record.childSessionID) : undefined;
+    if (child && used.has(child.id)) child = undefined;
+    if (!child) {
+      child = children.find(
+        (c) =>
+          !used.has(c.id) &&
+          c.state === 'running' &&
+          c.agent === record.agent &&
+          // The board stores objectives truncated and whitespace-collapsed.
+          truncate(c.title, 80) === (record.objective ?? ''),
+      );
+    }
+    if (child) used.add(child.id);
+    return { ...record, child };
+  });
+  for (const child of children) {
+    if (used.has(child.id) || child.state !== 'running') continue;
+    rows.push({
+      agent: child.agent ?? 'subagent',
+      objective: child.title ?? '',
+      state: 'running',
+      startedAt: child.since ?? undefined,
+      child,
+      unrecorded: true,
+    });
+  }
+  return rows;
+};
+
+const elapsedOf = (record, now) => {
+  const start = record.startedAt;
+  if (typeof start !== 'number') return '';
+  const end = record.state === 'running' ? now : record.endedAt;
+  return typeof end === 'number' ? formatElapsed(end - start) : '';
+};
+
 export const renderPanel = (model, h) => {
   const {
     version = 'dev',
@@ -126,6 +205,10 @@ export const renderPanel = (model, h) => {
     agents = [],
     agentsExpanded = false,
     records = [],
+    children = [],
+    main = null,
+    plan = null,
+    now = Date.now(),
     theme = {},
     snapshotState = 'ok',
     pluginVersion = null,
@@ -138,129 +221,160 @@ export const renderPanel = (model, h) => {
     onRevealMoreDispatches,
   } = model ?? {};
 
-  const muted = (content) => h.text({ fg: theme.textMuted }, [content]);
+  const line = (content, fg = theme.textMuted) => h.text({ fg }, [content]);
+  const muted = (content) => line(content);
+  const detail = (content, fg = theme.textMuted) => line(`  ${fit(content, OBJECTIVE_MAX)}`, fg);
 
-  /** A muted line the caller can click — accent instead of muted marks it as live. */
+  /** A line the caller can click — accent instead of muted marks it as live. */
   const actionable = (content, handler) =>
     h.text({ fg: theme.accent, onMouseDown: handler }, [content]);
 
-  /** A name on the left, a dimmer value on the right. */
-  const pair = (left, right, rightColor = theme.textMuted) =>
-    h.box({ width: '100%', flexDirection: 'row', justifyContent: 'space-between' }, [
-      h.text({ fg: theme.text }, [left]),
-      h.text({ fg: rightColor }, [right]),
-    ]);
+  /**
+   * A name on the left, a dimmer value on the right. The left half is fitted
+   * to what the right half leaves, with a space between them.
+   */
+  const pair = (left, right, leftColor = theme.text, rightColor = theme.textMuted, props = {}) => {
+    const room = PANEL_WIDTH - (right ? right.length + 1 : 0);
+    return h.box(
+      { width: '100%', flexDirection: 'row', justifyContent: 'space-between', ...props },
+      [h.text({ fg: leftColor }, [fit(left, room)]), h.text({ fg: rightColor }, [right])],
+    );
+  };
 
-  // Collapsed mode still owes the row budget: a preset routing more than
-  // MAX_AGENT_ROWS slots would otherwise render every one of them unbounded.
-  const collapsedAgents = agents.filter((agent) => agent.model).slice(0, MAX_AGENT_ROWS);
-  const collapsedHidden = agents.length - collapsedAgents.length;
+  const header = (left, right = '', first = false, props = {}) =>
+    pair(left, right, theme.accent, theme.textMuted, first ? props : { marginTop: 1, ...props });
 
-  const children = [
-    // Identity. The version answers "did my update land", the preset answers
-    // "why is it behaving like that" — both otherwise cost a turn to ask.
-    h.box({ width: '100%', flexDirection: 'row', justifyContent: 'space-between' }, [
-      h.text({ fg: theme.accent }, ['Superagent']),
-      h.text({ fg: theme.textMuted }, [`v${version}`]),
-    ]),
-    // A persistent, always-checked surface for "an update exists" — the toast
-    // the server plugin also fires on detection is best-effort and not yet
-    // confirmed against a live host, so this line is the one guaranteed way
-    // the notice reaches the user. See docs/superagent.md.
-    ...(updateAvailable
-      ? [
-          h.text({ fg: theme.accent }, [
-            `⬆ v${latestVersion ?? '?'} available — run /update install`,
-          ]),
-        ]
-      : []),
-    muted(
-      `${preset} · agents ${onOff(subsystems.agents)} · board ${onOff(subsystems.board)}` +
-        (subsystems.council ? ' · council on' : ''),
-    ),
+  const out = [];
+  let first = true;
+  const section = (title, right, props) => {
+    out.push(header(title, right, first, props));
+    first = false;
+  };
 
-    h.box(
-      {
-        width: '100%',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginTop: 1,
-        onMouseDown: onToggleAgents,
-      },
-      [
-        h.text({ fg: theme.accent }, ['Agents']),
-        h.text({ fg: theme.textMuted }, [String(agents.length)]),
-      ],
-    ),
-    ...(agents.length === 0
-      ? [muted('none registered')]
-      : agentsExpanded
-        ? [
-            ...orderAgents(agents)
-              .slice(0, agentRowLimit)
-              .map((agent) => pair(agent.name, shortModel(agent.model) || INHERIT)),
-            ...(agents.length > agentRowLimit
-              ? [actionable(`+${agents.length - agentRowLimit} more`, onRevealMoreAgents)]
-              : []),
-          ]
-        : [
-            ...collapsedAgents.map((agent) => pair(agent.name, shortModel(agent.model))),
-            ...(collapsedHidden > 0
-              ? [actionable(`+${collapsedHidden} collapsed`, onToggleAgents)]
-              : []),
-          ]),
-  ];
+  // Plan: which plan this session is executing, and how far through it is.
+  if (plan) {
+    section('Plan', plan.total ? `${plan.done}/${plan.total}` : '');
+    out.push(muted(fit(plan.name ?? '', PANEL_WIDTH)));
+    if (plan.current) out.push(line(`▸ ${fit(plan.current, OBJECTIVE_MAX)}`, theme.text));
+  }
 
-  const running = records.filter((r) => r.state === 'running');
-  children.push(
-    h.box({ width: '100%', flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 }, [
-      h.text({ fg: theme.accent }, ['Dispatches']),
-      h.text({ fg: theme.textMuted }, [
-        records.length ? `${running.length}/${records.length}` : '—',
-      ]),
-    ]),
-  );
-
-  if (snapshotState === 'none') {
-    children.push(muted('no snapshot yet — nothing dispatched'));
-  } else if (snapshotState === 'incompatible') {
-    children.push(muted('snapshot from a different plugin version'));
-  } else if (snapshotState === 'version-mismatch') {
-    children.push(muted(`server v${pluginVersion} ≠ panel v${version}`));
-  } else if (!records.length) {
-    children.push(muted('none this session'));
-  } else {
-    const ordered = orderRecords(records);
-    for (const record of ordered.slice(0, dispatchRowLimit)) {
-      const state = record.state ?? 'unknown';
-      children.push(
+  // Main: the agent the human is talking to. The skill line in the main pane
+  // scrolls away; this one stays while the skill is shaping behaviour.
+  if (main) {
+    section(main.skill ? `Main · ${main.skill}` : 'Main');
+    if (main.state === 'running') {
+      out.push(
         pair(
-          `${STATE_GLYPH[state] ?? ''} ${record.agent ?? 'unknown'}`,
-          `${state}${record.background ? ' (bg)' : ''}`,
-          theme[STATE_COLOR[state] ?? 'textMuted'] ?? theme.textMuted,
+          `● ${main.current ?? 'working'}`,
+          typeof main.since === 'number' ? formatElapsed(now - main.since) : '',
+          theme.info,
         ),
       );
-      // Detail lines only for what is still running. A finished dispatch is
-      // one line of history; the one holding files right now is worth three.
-      if (record.state === 'running') {
-        children.push(
-          h.text({ fg: theme.textMuted }, [`  ${fit(record.objective || '—', OBJECTIVE_MAX)}`]),
-        );
+    } else {
+      out.push(muted('idle'));
+    }
+  }
+
+  // Subagents: the board's ledger, joined to what each child is doing now.
+  const rows = orderRecords(joinChildren(records, children));
+  const running = rows.filter((r) => r.state === 'running');
+  section('Subagents', rows.length ? `${running.length}/${rows.length}` : '—');
+
+  if (snapshotState === 'incompatible') {
+    out.push(muted('snapshot from a different plugin version'));
+  } else if (snapshotState === 'version-mismatch') {
+    out.push(muted(`server v${pluginVersion} ≠ panel v${version}`));
+  }
+  if (!rows.length) {
+    if (snapshotState === 'none') out.push(muted('no snapshot yet — nothing dispatched'));
+    else if (snapshotState === 'ok') out.push(muted('none this session'));
+  } else {
+    let detailed = 0;
+    for (const record of rows.slice(0, dispatchRowLimit)) {
+      const state = record.state ?? 'unknown';
+      const color = theme[STATE_COLOR[state] ?? 'textMuted'] ?? theme.textMuted;
+      const label = record.objective
+        ? `${record.agent ?? 'unknown'} · ${record.objective}`
+        : (record.agent ?? 'unknown');
+      const timer = elapsedOf(record, now);
+      out.push(
+        pair(
+          `${STATE_GLYPH[state] ?? '·'} ${label}`,
+          // A state without a glyph is one this panel does not know, so it is
+          // named rather than silently drawn like a known one.
+          [record.background ? 'bg' : '', STATE_GLYPH[state] ? '' : state, timer]
+            .filter(Boolean)
+            .join(' '),
+          theme.text,
+          color,
+        ),
+      );
+
+      if (state === 'running') {
+        // Detail lines only for the first few running rows: each is worth
+        // up to three more lines, and the sidebar is short.
+        if (detailed >= MAX_DETAILED_RUNNING) continue;
+        detailed += 1;
+        if (record.child?.current) out.push(detail(record.child.current));
         // Ownership is the one thing on the board a human cannot get anywhere
         // else, and it is what tells them two agents are about to collide.
-        if (record.owns?.length) {
-          children.push(
-            h.text({ fg: theme.textMuted }, [
-              `  owns ${fit(record.owns.join(', '), OBJECTIVE_MAX - 'owns '.length)}`,
-            ]),
-          );
+        if (record.owns?.length) out.push(detail(`owns ${record.owns.join(', ')}`));
+        if (record.conflicts?.length) {
+          out.push(detail(`⚠ overlaps ${record.conflicts.join(', ')}`, theme.warning));
         }
+      } else if (state === 'error' && record.result) {
+        out.push(detail(`✗ ${record.result}`, theme.error));
+      } else if (state === 'completed' && record.result) {
+        out.push(detail(`→ ${record.result}`));
       }
     }
-    if (ordered.length > dispatchRowLimit) {
-      children.push(
-        actionable(`+${ordered.length - dispatchRowLimit} more`, onRevealMoreDispatches),
-      );
+    if (rows.length > dispatchRowLimit) {
+      out.push(actionable(`+${rows.length - dispatchRowLimit} more`, onRevealMoreDispatches));
+    }
+  }
+
+  // Configuration, last and smallest. A persistent surface for "an update
+  // exists" — the toast is best-effort, this line is the guaranteed notice.
+  if (updateAvailable) {
+    out.push(
+      h.text({ fg: theme.accent, marginTop: 1 }, [
+        `⬆ v${latestVersion ?? '?'} available — run /update install`,
+      ]),
+    );
+  }
+  // Name and version together on the left (they answer "which plugin, did my
+  // update land"); preset and roster size on the right. That way round fits
+  // the 35-column sidebar without truncating either half.
+  const roster = subsystems.agents === false ? '' : ` · ${agents.length} agents`;
+  out.push(
+    pair(
+      `Superagent v${version}`,
+      fit(`${preset}${roster}`, PANEL_WIDTH - 'Superagent v'.length - version.length - 1),
+      theme.textMuted,
+      theme.textMuted,
+      { marginTop: updateAvailable ? 0 : 1, onMouseDown: onToggleAgents },
+    ),
+  );
+  // Only the unusual states: a subsystem switched off explains behaviour the
+  // reader would otherwise expect; the defaults being on is not news.
+  const unusual = [
+    subsystems.agents === false ? 'agents off' : '',
+    subsystems.board === false ? 'board off' : '',
+    subsystems.council ? 'council on' : '',
+  ].filter(Boolean);
+  if (unusual.length) out.push(muted(unusual.join(' · ')));
+
+  // The roster, on request: clicking the footer toggles it.
+  if (agentsExpanded) {
+    if (!agents.length) {
+      out.push(muted('  none registered'));
+    } else {
+      for (const agent of orderAgents(agents).slice(0, agentRowLimit)) {
+        out.push(pair(`  ${agent.name}`, shortModel(agent.model) || INHERIT));
+      }
+      if (agents.length > agentRowLimit) {
+        out.push(actionable(`  +${agents.length - agentRowLimit} more`, onRevealMoreAgents));
+      }
     }
   }
 
@@ -275,6 +389,6 @@ export const renderPanel = (model, h) => {
       paddingLeft: 1,
       paddingRight: 1,
     },
-    children,
+    out,
   );
 };

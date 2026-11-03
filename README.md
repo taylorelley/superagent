@@ -55,8 +55,9 @@ load in OpenCode 1).
   ```
 
 - Verify by asking: "What can Superagent do?"
-- The one entry also loads the TUI sidebar panel — version, preset, roster, and
-  the live job board. There is no separate `tui.json` entry in OpenCode 2.
+- The one entry also loads the TUI sidebar panel — the plan's progress, what
+  the main agent and each subagent are doing right now, and what came back.
+  There is no separate `tui.json` entry in OpenCode 2.
 - Install and troubleshooting details: [.opencode/INSTALL.md](.opencode/INSTALL.md)
 - Full guide: [docs/README.opencode.md](docs/README.opencode.md)
 - Superagent also registers a roster of specialist agents on OpenCode — see

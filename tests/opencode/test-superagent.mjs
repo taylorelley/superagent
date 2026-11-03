@@ -1134,3 +1134,28 @@ test('plugin: a live switch from solo turns the board and its snapshot on', asyn
     );
   });
 });
+
+test('plugin: a foreground child session is linked to its dispatch for the panel', async () => {
+  resetPromptCache();
+  const { snapshotPath, readSnapshot } = await import('../../.opencode/lib/tui-snapshot.js');
+  await withPlugin({}, async (fake, dir) => {
+    const file = snapshotPath(path.join(dir, 'config'), path.join(dir, 'project'));
+    await fake.fire('tool', 'execute.before', {
+      tool: 'subagent',
+      sessionID: 'ses_parent',
+      id: 'c1',
+      input: { agent: 'general', description: 'Count files', prompt: 'go' },
+    });
+    // The payload OpenCode 2.2.5 sends for a subagent's child session.
+    await fake.emit({
+      type: 'session.created',
+      data: {
+        sessionID: 'ses_kid',
+        parentID: 'ses_parent',
+        title: 'Count files',
+        agent: 'general',
+      },
+    });
+    assert.equal(readSnapshot(file)?.sessions?.ses_parent?.records?.[0]?.childSessionID, 'ses_kid');
+  });
+});
