@@ -137,8 +137,13 @@ description: Use when [condition] - [what it does]
 [Your skill content here]
 ```
 
-Priority is project skills > personal skills > Superagent skills, so a
-personal or project skill with the same name as a Superagent skill replaces it.
+Priority is project skills > personal skills > Superagent skills. Skills are
+matched by ID, which is the skill's directory name, so to replace a Superagent
+skill put yours in a directory with the same name (for example
+`.opencode/skills/brainstorming/`). A matching `name:` in the frontmatter alone
+does not replace it. The one exception is `using-superagent`: the session
+bootstrap always injects the bundled copy, so a local skill with that ID does
+not change it.
 
 ## Updating
 
