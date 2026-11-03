@@ -19,7 +19,7 @@
 
 This is one scenario, run once, at smoke strength (5 reps) — not the
 multi-round RED→GREEN campaign this project ran for comparable prior SDD
-changes (e.g. `2026-07-06-sdd-plan-scoped-workspace-eval-results.md`'s 25
+changes (e.g. the upstream plan-scoped-workspace evals' 25
 RED reps across three framings plus 15 GREEN reps across two arms). It
 targets the single highest-risk failure mode in the Parallel Waves design:
 a controller computing wave membership and the three gating conditions
