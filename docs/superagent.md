@@ -189,33 +189,34 @@ top to bottom, what the plan is, what the main agent is doing, and what each
 subagent is doing:
 
 ```text
- Plan                            2/4
- 2026-11-02-demo.md
+ Plan ━━━━━━━─────────────────── 1/4
+ 2026-11-03-demo.md
  ▸ Task 2: Count files
 
- Main · brainstorming
- ● subagent general             0:06
+ Main · brainstorming ──────────────
+ ◓ subagent general             0:07
 
- Subagents                       1/2
- ● general · Count files        0:06
-   shell sleep 6 && ls
-   owns src/api/**
-   ⚠ overlaps implementer
+ Subagents ───────────────────── 1/1
+ ◓ general · Count files        0:07
+ ├ shell sleep 30 && ls
+ ├ owns src/api/**
+ └ ⚠ overlaps implementer
  ✓ explore · Find callers       1:05
-   → Found 3 call sites in tui-…
+ └ Found 3 call sites in tui-pan…
 
- Superagent v0.1.0   team · 10 agents
+ Superagent v0.1.0  team · 10 agents
 ```
 
-(Captured from OpenCode 2.2.5's real TUI, with the conflict and second row
-added for illustration.)
+(Captured from OpenCode 2.2.5's real TUI, with the ownership lines and the
+second row added for illustration.)
 
 - **Plan** — the `docs/superagent/plans/*.md` file the session is working
   from, found in the tool calls of the session or of one of its subagents
   (under `team` the orchestrator may not edit files, so a subagent usually
-  writes it). `2/4` counts ticked `- [x]` steps; `▸` is the task holding the
-  first unticked one. A plan without checkboxes reports its task count. No
-  plan, no section.
+  writes it). `2/4` counts ticked `- [x]` steps, and the header's rule fills
+  in the success colour as they are ticked — never full until the last one,
+  never empty once one is; `▸` is the task holding the first unticked one. A
+  plan without checkboxes reports its task count. No plan, no section.
 - **Main** — the skill the main agent last loaded (the "→ Skill" line in the
   main pane scrolls away; this one stays), what it is doing right now and for
   how long, or `idle`. Between tool calls it says `thinking`.
@@ -226,7 +227,9 @@ added for illustration.)
   invisible), the files it declared it owns, and — in the warning colour — any
   running dispatch it overlapped when it started. A finished row adds what
   came back (`→ …`), or why it failed. States carry glyphs so an outcome reads
-  at a glance: `●` running, `✓` completed, `✗` error, `○` cancelled.
+  at a glance: a spinner (`◐◓◑◒`, a quarter turn per second, on the same
+  repaint that ticks the timers) while running, `✓` completed, `✗` error, `○`
+  cancelled. Detail lines hang off their row on a `├`/`└` tree guide.
 - **Footer** — the version (did my update land) and the preset with its roster
   size. A subsystem switched off gets its own line (`board off`); the defaults
   being on is not news.
@@ -570,6 +573,12 @@ every request body — so what the model receives is checked byte for byte.
 - **The sidebar panel renders and stays live** in the real TUI (driven in
   `tmux`): it showed the version, preset, roster summary and dispatches, and
   updated in place as a second, background dispatch ran and settled.
+- **The panel's styling** (OpenCode 2.2.5 from the installer, in `tmux`,
+  scripted mock model): every row measured exactly 35 columns, so `━ ─ ◐◓◑◒ ├
+  └` are one column wide in the host; section titles and the footer name are
+  emitted bold (`\e[1m`); the spinner advanced one frame per second in step
+  with the timer. A mouse click on the footer (an SGR mouse event sent through
+  `tmux`) expanded the roster, and a second collapsed it.
 - **The activity panel** (driven through a pty, scripted mock model): the plan
   a subagent wrote (`2/4`, current task), `Main · brainstorming` with a ticking
   timer, a foreground subagent's live `shell` call, then `thinking`, then `✓`
@@ -588,9 +597,9 @@ every request body — so what the model receives is checked byte for byte.
   a clean session — has not been re-run on OpenCode 2. Everything above was
   exercised with a scripted mock model.
 - Model routing with real per-slot models (the mock exposes one provider).
-- Whether a mouse click is delivered to the panel's `onMouseDown` props by the
-  live host (the footer's roster toggle, the `+N more` lines). The click path is the same signal bump as the poll, which is
-  verified; the event delivery is not.
+- A click on a `+N more` line in the live host. The footer's click is
+  delivered (see above) and both go through the same `onMouseDown` prop and
+  signal bump, but the overflow lines themselves were not clicked.
 - Behaviour on Windows, and with the TUI attached to a remote server (the
   panel reads its snapshot from the local config directory).
 - Whether multiple `subagent` calls in a single assistant message run

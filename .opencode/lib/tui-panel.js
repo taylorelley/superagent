@@ -89,10 +89,45 @@ const STATE_COLOR = {
 };
 
 const STATE_GLYPH = {
-  running: '●',
+  running: '●', // drawn as a SPINNER frame; kept so `running` counts as known
   completed: '✓',
   error: '✗',
   cancelled: '○',
+};
+
+/**
+ * A running row's glyph turns a quarter each second. The entry file already
+ * repaints once a second while anything runs (so the timers tick), and the
+ * frame is derived from the same `now`, so this costs no extra timer and the
+ * panel stays a pure function of its inputs.
+ */
+export const SPINNER = ['◐', '◓', '◑', '◒'];
+export const runningGlyph = (now) => {
+  const second = Math.floor(Number(now) / 1000);
+  return SPINNER[Number.isFinite(second) ? ((second % 4) + 4) % 4 : 0];
+};
+
+/**
+ * OpenTUI's `TextAttributes.BOLD` (from `@opentui/core`). It is a terminal
+ * SGR bit and stable across OpenTUI versions; inlining it saves importing a
+ * third host module for one number. A host that ignores the prop renders the
+ * text plain, which is the panel as it was.
+ */
+const BOLD = 1;
+
+/**
+ * How much of a `width`-column bar a plan's progress fills. Never full until
+ * every step is done, never empty once one is, so the bar cannot round away
+ * the difference the count beside it is making.
+ */
+export const progressBar = (done, total, width) => {
+  const room = Math.max(0, Math.floor(width));
+  if (!(total > 0) || room === 0) return { filled: 0, empty: room };
+  const ratio = Math.min(1, Math.max(0, done / total));
+  let filled = Math.round(ratio * room);
+  if (ratio > 0 && filled === 0) filled = 1;
+  if (ratio < 1 && filled === room) filled = room - 1;
+  return { filled, empty: room - filled };
 };
 
 /**
@@ -223,7 +258,18 @@ export const renderPanel = (model, h) => {
 
   const line = (content, fg = theme.textMuted) => h.text({ fg }, [content]);
   const muted = (content) => line(content);
-  const detail = (content, fg = theme.textMuted) => line(`  ${fit(content, OBJECTIVE_MAX)}`, fg);
+  /**
+   * A row's detail lines hang off it on a tree guide: `├` for all but the
+   * last, `└` for the last. The guide is the same two columns the indent
+   * was, so the text budget is unchanged.
+   */
+  const details = (items) =>
+    items.map(({ text: content, fg = theme.textMuted }, i) =>
+      h.box({ width: '100%', flexDirection: 'row' }, [
+        h.text({ fg: theme.textMuted }, [i === items.length - 1 ? '└ ' : '├ ']),
+        h.text({ fg }, [fit(content, OBJECTIVE_MAX)]),
+      ]),
+    );
 
   /** A line the caller can click — accent instead of muted marks it as live. */
   const actionable = (content, handler) =>
@@ -241,19 +287,49 @@ export const renderPanel = (model, h) => {
     );
   };
 
-  const header = (left, right = '', first = false, props = {}) =>
-    pair(left, right, theme.accent, theme.textMuted, first ? props : { marginTop: 1, ...props });
+  /**
+   * A section header: bold title, a hairline rule across the gap, the count
+   * on the right. The rule is sized to the column so the row never wraps.
+   * `bar`, when given, turns the rule into a progress bar — filled in the
+   * success colour, the rest left as rule.
+   */
+  const header = (title, right = '', first = false, props = {}, bar = null) => {
+    const tail = right ? right.length + 1 : 0;
+    const name = fit(title, PANEL_WIDTH - tail);
+    const gap = Math.max(0, PANEL_WIDTH - name.length - tail - 1);
+    const rule = [];
+    if (gap > 0 && bar) {
+      const { filled, empty } = progressBar(bar.done, bar.total, gap);
+      rule.push(h.text({ fg: theme.success }, [` ${'━'.repeat(filled)}`]));
+      rule.push(h.text({ fg: theme.textMuted }, [`${'─'.repeat(empty)}${right ? ' ' : ''}`]));
+    } else if (gap > 0) {
+      rule.push(h.text({ fg: theme.textMuted }, [` ${'─'.repeat(gap)}${right ? ' ' : ''}`]));
+    }
+    return h.box(
+      { width: '100%', flexDirection: 'row', ...(first ? {} : { marginTop: 1 }), ...props },
+      [
+        h.text({ fg: theme.accent, attributes: BOLD }, [name]),
+        ...rule,
+        ...(right ? [h.text({ fg: theme.textMuted }, [right])] : []),
+      ],
+    );
+  };
 
   const out = [];
   let first = true;
-  const section = (title, right, props) => {
-    out.push(header(title, right, first, props));
+  const section = (title, right, props, bar) => {
+    out.push(header(title, right, first, props, bar));
     first = false;
   };
 
   // Plan: which plan this session is executing, and how far through it is.
   if (plan) {
-    section('Plan', plan.total ? `${plan.done}/${plan.total}` : '');
+    section(
+      'Plan',
+      plan.total ? `${plan.done}/${plan.total}` : '',
+      {},
+      plan.total ? { done: plan.done ?? 0, total: plan.total } : null,
+    );
     out.push(muted(fit(plan.name ?? '', PANEL_WIDTH)));
     if (plan.current) out.push(line(`▸ ${fit(plan.current, OBJECTIVE_MAX)}`, theme.text));
   }
@@ -265,7 +341,7 @@ export const renderPanel = (model, h) => {
     if (main.state === 'running') {
       out.push(
         pair(
-          `● ${main.current ?? 'working'}`,
+          `${runningGlyph(now)} ${main.current ?? 'working'}`,
           typeof main.since === 'number' ? formatElapsed(now - main.since) : '',
           theme.info,
         ),
@@ -297,9 +373,10 @@ export const renderPanel = (model, h) => {
         ? `${record.agent ?? 'unknown'} · ${record.objective}`
         : (record.agent ?? 'unknown');
       const timer = elapsedOf(record, now);
+      const glyph = state === 'running' ? runningGlyph(now) : (STATE_GLYPH[state] ?? '·');
       out.push(
         pair(
-          `${STATE_GLYPH[state] ?? '·'} ${label}`,
+          `${glyph} ${label}`,
           // A state without a glyph is one this panel does not know, so it is
           // named rather than silently drawn like a known one.
           [record.background ? 'bg' : '', STATE_GLYPH[state] ? '' : state, timer]
@@ -315,17 +392,20 @@ export const renderPanel = (model, h) => {
         // up to three more lines, and the sidebar is short.
         if (detailed >= MAX_DETAILED_RUNNING) continue;
         detailed += 1;
-        if (record.child?.current) out.push(detail(record.child.current));
+        const items = [];
+        if (record.child?.current) items.push({ text: record.child.current });
         // Ownership is the one thing on the board a human cannot get anywhere
         // else, and it is what tells them two agents are about to collide.
-        if (record.owns?.length) out.push(detail(`owns ${record.owns.join(', ')}`));
+        if (record.owns?.length) items.push({ text: `owns ${record.owns.join(', ')}` });
         if (record.conflicts?.length) {
-          out.push(detail(`⚠ overlaps ${record.conflicts.join(', ')}`, theme.warning));
+          items.push({ text: `⚠ overlaps ${record.conflicts.join(', ')}`, fg: theme.warning });
         }
+        out.push(...details(items));
       } else if (state === 'error' && record.result) {
-        out.push(detail(`✗ ${record.result}`, theme.error));
+        // The row's ✗ and the error colour already say it failed.
+        out.push(...details([{ text: record.result, fg: theme.error }]));
       } else if (state === 'completed' && record.result) {
-        out.push(detail(`→ ${record.result}`));
+        out.push(...details([{ text: record.result }]));
       }
     }
     if (rows.length > dispatchRowLimit) {
@@ -345,14 +425,29 @@ export const renderPanel = (model, h) => {
   // Name and version together on the left (they answer "which plugin, did my
   // update land"); preset and roster size on the right. That way round fits
   // the 35-column sidebar without truncating either half.
+  // The name in bold accent makes the footer read as a signature rather than
+  // one more muted row, at no cost in columns (the sidebar has none spare).
+  // A spacer, not space-between, keeps every part a direct child of the
+  // clickable box.
   const roster = subsystems.agents === false ? '' : ` · ${agents.length} agents`;
+  const brand = 'Superagent';
+  const tag = ` v${version}`;
   out.push(
-    pair(
-      `Superagent v${version}`,
-      fit(`${preset}${roster}`, PANEL_WIDTH - 'Superagent v'.length - version.length - 1),
-      theme.textMuted,
-      theme.textMuted,
-      { marginTop: updateAvailable ? 0 : 1, onMouseDown: onToggleAgents },
+    h.box(
+      {
+        width: '100%',
+        flexDirection: 'row',
+        marginTop: updateAvailable ? 0 : 1,
+        onMouseDown: onToggleAgents,
+      },
+      [
+        h.text({ fg: theme.accent, attributes: BOLD }, [brand]),
+        h.text({ fg: theme.textMuted }, [tag]),
+        h.box({ flexGrow: 1 }, []),
+        h.text({ fg: theme.textMuted }, [
+          fit(`${preset}${roster}`, Math.max(0, PANEL_WIDTH - brand.length - tag.length - 1)),
+        ]),
+      ],
     ),
   );
   // Only the unusual states: a subsystem switched off explains behaviour the
@@ -369,11 +464,17 @@ export const renderPanel = (model, h) => {
     if (!agents.length) {
       out.push(muted('  none registered'));
     } else {
-      for (const agent of orderAgents(agents).slice(0, agentRowLimit)) {
-        out.push(pair(`  ${agent.name}`, shortModel(agent.model) || INHERIT));
-      }
-      if (agents.length > agentRowLimit) {
-        out.push(actionable(`  +${agents.length - agentRowLimit} more`, onRevealMoreAgents));
+      // On the same tree guide as a row's details. Not an indent: OpenCode
+      // 2.2.5 trims leading spaces from a text inside a row box, which left
+      // the names flush with the headers and the "+N more" line indented.
+      const shown = orderAgents(agents).slice(0, agentRowLimit);
+      const more = agents.length > agentRowLimit;
+      shown.forEach((agent, i) => {
+        const guide = i === shown.length - 1 && !more ? '└ ' : '├ ';
+        out.push(pair(`${guide}${agent.name}`, shortModel(agent.model) || INHERIT));
+      });
+      if (more) {
+        out.push(actionable(`└ +${agents.length - agentRowLimit} more`, onRevealMoreAgents));
       }
     }
   }

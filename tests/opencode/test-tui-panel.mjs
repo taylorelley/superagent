@@ -15,7 +15,10 @@ import {
   MAX_DISPATCH_ROWS,
   OBJECTIVE_MAX,
   PANEL_WIDTH,
+  SPINNER,
+  progressBar,
   renderPanel,
+  runningGlyph,
   shortModel,
 } from '../../.opencode/lib/tui-panel.js';
 
@@ -112,7 +115,7 @@ test('configuration is one footer line: preset, agent count, version', () => {
     }),
   );
 
-  assert.ok(text.includes('Superagent v0.1.0'), JSON.stringify(text));
+  assert.ok(text.includes('Superagent') && text.includes(' v0.1.0'), JSON.stringify(text));
   assert.ok(text.includes('team · 2 agents'));
   assert.ok(!text.some((line) => line.includes(' on')), 'subsystems that are on are not news');
 });
@@ -198,7 +201,7 @@ test('routed agents sort first and lose their provider prefix', () => {
 test('the footer carries the roster toggle as onMouseDown', () => {
   const onToggleAgents = () => {};
   const tree = render({ version: '0.1.0', onToggleAgents });
-  const footer = boxWithLabel(tree, 'Superagent v0.1.0');
+  const footer = boxWithLabel(tree, ' v0.1.0');
   assert.equal(footer?.props?.onMouseDown, onToggleAgents);
 });
 
@@ -249,7 +252,7 @@ test('the main agent shows its skill, what it is doing, and for how long', () =>
     }),
   );
   assert.ok(text.includes('Main · brainstorming'));
-  assert.ok(text.some((line) => line.includes('● read board.js')));
+  assert.ok(text.some((line) => line.includes(`${runningGlyph(62_000)} read board.js`)));
   assert.ok(text.includes('0:42'));
 });
 
@@ -364,7 +367,7 @@ test('a finished row shows what came back; a failed one shows why', () => {
     ],
   });
   const text = lines(tree);
-  assert.ok(text.some((line) => line.includes('→ Found 3 call sites')));
+  assert.ok(text.some((line) => line === 'Found 3 call sites'));
   assert.equal(textContaining(tree, 'npm test exited 1')?.props?.fg, 'error');
 });
 
@@ -455,7 +458,7 @@ test('dispatch states carry a glyph so outcome reads without scanning colours', 
       ],
     }),
   );
-  assert.ok(text.some((line) => line.includes('●')));
+  assert.ok(text.some((line) => SPINNER.some((frame) => line.startsWith(frame))));
   assert.ok(text.some((line) => line.includes('✓')));
   assert.ok(text.some((line) => line.includes('✗')));
 });
@@ -573,14 +576,19 @@ test('every row fits the sidebar with a gap, however long its parts', () => {
       dispatch({ state: 'running', background: true, objective: 'y'.repeat(80), startedAt: 0 }),
     ],
   });
+  let rows = 0;
   walk(tree, (n) => {
     if (n.tag !== 'box' || n.props?.flexDirection !== 'row') return;
-    const [left, right] = n.children.map((c) => c.children.join(''));
-    assert.ok(
-      left.length + (right ? right.length + 1 : 0) <= PANEL_WIDTH,
-      `"${left}" + "${right}" overflows ${PANEL_WIDTH}`,
-    );
+    rows += 1;
+    const parts = n.children.filter((c) => c.tag === 'text').map((c) => c.children.join(''));
+    // Halves pushed apart (space-between, or a spacer box) need a column
+    // between them; a header's parts carry their own spaces.
+    const spread =
+      n.props.justifyContent === 'space-between' || n.children.some((c) => c.tag === 'box');
+    const width = parts.join('').length + (spread && parts.at(-1) ? 1 : 0);
+    assert.ok(width <= PANEL_WIDTH, `${JSON.stringify(parts)} overflows ${PANEL_WIDTH}`);
   });
+  assert.ok(rows > 3, 'headers, rows and the footer were all measured');
 });
 
 test('a resumed child shows its activity on the running follow-up, not the finished first row', () => {
@@ -603,9 +611,10 @@ test('a resumed child shows its activity on the running follow-up, not the finis
       ],
     }),
   );
-  const row = text.findIndex((line) => line.includes('● general · First'));
+  const row = text.findIndex((line) => line.includes(`${runningGlyph(60_000)} general · First`));
   assert.ok(row >= 0);
-  assert.equal(text[row + 2].trim(), 'shell npm test', JSON.stringify(text));
+  assert.equal(text[row + 2], '└ ', JSON.stringify(text));
+  assert.equal(text[row + 3], 'shell npm test', JSON.stringify(text));
   assert.equal(text.filter((line) => line.includes('shell npm test')).length, 1);
 });
 
@@ -624,4 +633,79 @@ test('the fallback match compares titles the way the board stores objectives', (
     1,
     'no duplicate row',
   );
+});
+
+// ---------------------------------------------------------------- polish
+
+test('section headers are bold, ruled to the column, and keep their count', () => {
+  const tree = render({ records: [dispatch({ state: 'running' })] });
+  const header = boxWithLabel(tree, 'Subagents');
+  const [title, rule, count] = header.children;
+  assert.equal(title.props.attributes, 1, 'bold');
+  assert.equal(title.props.fg, 'accent');
+  assert.match(rule.children[0], /^ ─+ $/);
+  assert.equal(count.children[0], '1/1');
+  const width = header.children.map((c) => c.children.join('')).join('').length;
+  assert.equal(width, PANEL_WIDTH, 'the rule fills the gap exactly');
+});
+
+test('the plan header rule is a progress bar', () => {
+  const tree = render({ plan: { name: 'p.md', done: 1, total: 4 } });
+  const header = boxWithLabel(tree, 'Plan');
+  const [, filled, empty, count] = header.children;
+  assert.equal(filled.props.fg, 'success');
+  assert.equal(empty.props.fg, 'muted');
+  const bar = filled.children[0].trim().length;
+  const rest = empty.children[0].trim().length;
+  assert.equal(bar, progressBar(1, 4, bar + rest).filled);
+  assert.equal(count.children[0], '1/4');
+});
+
+test('progressBar never rounds a difference away', () => {
+  assert.deepEqual(progressBar(0, 0, 10), { filled: 0, empty: 10 });
+  assert.deepEqual(progressBar(0, 4, 10), { filled: 0, empty: 10 });
+  assert.deepEqual(progressBar(4, 4, 10), { filled: 10, empty: 0 });
+  assert.deepEqual(progressBar(1, 100, 10), { filled: 1, empty: 9 }, 'started shows');
+  assert.deepEqual(progressBar(99, 100, 10), { filled: 9, empty: 1 }, 'unfinished shows');
+  assert.deepEqual(progressBar(9, 4, 10), { filled: 10, empty: 0 }, 'clamped');
+  assert.deepEqual(progressBar(1, 2, -3), { filled: 0, empty: 0 });
+});
+
+test('the running glyph turns once a second', () => {
+  const frames = [0, 1000, 2000, 3000, 4000].map(runningGlyph);
+  assert.deepEqual(frames, [...SPINNER, SPINNER[0]]);
+  assert.equal(runningGlyph(1999), runningGlyph(1000));
+  assert.equal(runningGlyph(Number.NaN), SPINNER[0]);
+});
+
+test('detail lines hang off their row on a tree guide', () => {
+  const text = lines(
+    render({
+      records: [dispatch({ state: 'running', owns: ['a/**'], conflicts: ['reviewer'] })],
+    }),
+  );
+  const owns = text.findIndex((line) => line.startsWith('owns'));
+  assert.equal(text[owns - 1], '├ ');
+  assert.equal(text[owns + 1], '└ ', 'the last detail closes the branch');
+});
+
+test('the footer signs off with the name in bold accent', () => {
+  const footer = boxWithLabel(render({ version: '0.1.0' }), ' v0.1.0');
+  const [name, tag] = footer.children;
+  assert.equal(name.children[0], 'Superagent');
+  assert.equal(name.props.fg, 'accent');
+  assert.equal(name.props.attributes, 1);
+  assert.equal(tag.props.fg, 'muted');
+});
+
+test('the expanded roster hangs off the footer on a tree guide', () => {
+  const text = lines(render({ agents: roster(3), agentsExpanded: true }));
+  const names = text.filter((line) => line.includes('agent-'));
+  assert.deepEqual(
+    names.map((line) => line.slice(0, 2)),
+    ['├ ', '├ ', '└ '],
+  );
+  const paged = lines(render({ agents: roster(MAX_AGENT_ROWS + 1), agentsExpanded: true }));
+  assert.ok(paged.filter((line) => line.includes('agent-')).every((l) => l.startsWith('├ ')));
+  assert.ok(paged.includes('└ +1 more'), 'the overflow line closes the branch');
 });
