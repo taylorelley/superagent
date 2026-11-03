@@ -471,8 +471,6 @@ and reimplemented from scratch.
 
 - **Issues with this fork**: https://github.com/taylorelley/superagent/issues
 - **Upstream Superpowers**: https://github.com/obra/superpowers
-- **Discord**: [the upstream community](https://discord.gg/35wsABTejz) for general Superpowers discussion
-- **Release notes**: [RELEASE-NOTES.md](RELEASE-NOTES.md)
 - **Original announcement**: [Superpowers](https://blog.fsck.com/2025/10/09/superpowers/)
 
 ## License
