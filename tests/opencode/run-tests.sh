@@ -50,7 +50,7 @@ while [[ $# -gt 0 ]]; do
             echo "  test-tui.sh             Verify the TUI sidebar panel"
             echo "  test-update.sh          Verify the update checker and installer"
             echo "  test-tool-map-single-source.sh  Verify the tool map has one source"
-            echo "  test-tools.sh           Test use_skill and find_skills tools (integration)"
+            echo "  test-tools.sh           Test the native skill tool (integration)"
             echo "  test-priority.sh        Test skill priority resolution (integration)"
             exit 0
             ;;

@@ -12,8 +12,7 @@ add a comment or reaction to the existing one instead.
 - [ ] I searched existing issues and this is not a duplicate
 
 ## Environment (required)
-<!-- Required. We assume an agent filed this report — tell us which one and
-     where it ran. We weigh reports by what produced them. -->
+<!-- Required. If an agent filed this report, say which model. -->
 
 | Field | Value |
 |-------|-------|

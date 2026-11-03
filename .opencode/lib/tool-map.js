@@ -3,9 +3,7 @@
  *
  * Superagent skills are harness-neutral: they speak in actions ("create a
  * todo", "dispatch a subagent") rather than tool names. Each harness supplies
- * the translation. This mapping used to be restated in three places — the
- * plugin, `.opencode/INSTALL.md`, and `docs/README.opencode.md` — which meant
- * three chances to drift. Those documents now carry generated regions rendered
+ * the translation. `.opencode/INSTALL.md` carries a generated region rendered
  * from this file, checked by `tests/opencode/test-tool-map-single-source.sh`.
  *
  * Verified against the OpenCode V2 tool inventory (opencode 2.2.5).

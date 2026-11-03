@@ -1,4 +1,7 @@
-# Installing Superagent for OpenCode
+# Superagent for OpenCode
+
+The guide to installing, using, and troubleshooting Superagent on
+[OpenCode](https://opencode.ai).
 
 ## Prerequisites
 
@@ -117,6 +120,31 @@ use skill tool to list skills
 use skill tool to load brainstorming
 ```
 
+### Personal and project skills
+
+Put your own skills in `~/.config/opencode/skills/` (personal) or
+`.opencode/skills/` inside a project. Each skill is a directory with a
+`SKILL.md`:
+
+```markdown
+---
+name: my-skill
+description: Use when [condition] - [what it does]
+---
+
+# My Skill
+
+[Your skill content here]
+```
+
+Priority is project skills > personal skills > Superagent skills. Skills are
+matched by ID, which is the skill's directory name, so to replace a Superagent
+skill put yours in a directory with the same name (for example
+`.opencode/skills/brainstorming/`). A matching `name:` in the frontmatter alone
+does not replace it. The one exception is `using-superagent`: the session
+bootstrap always injects the bundled copy, so a local skill with that ID does
+not change it.
+
 ## Updating
 
 ```bash
@@ -146,6 +174,46 @@ opencode plugin add 'github:taylorelley/superagent#main'
 
 A branch moves, so that selects a line of development rather than pinning one.
 For a reproducible install, append a full commit SHA instead.
+
+## How it works
+
+The server part (`.opencode/plugins/superagent.js`) is an OpenCode 2 plugin — a
+default-exported `{ id, setup }`. In `setup` it:
+
+1. **Registers the skills** through `ctx.skill.transform`, so OpenCode's
+   native `skill` tool discovers every Superagent skill without symlinks or
+   config edits. The skills directory is watched, so an edited skill is picked
+   up by the running server.
+2. **Injects bootstrap context** through the `ctx.session.hook("context")`
+   model-request hook, prepending Superagent awareness to the first user
+   message of every agent-loop request. It only changes the outgoing request,
+   never stored history.
+3. **Registers the agent-team layer** — agents through `ctx.agent.transform`,
+   slash commands through `ctx.command.transform`, and the job board through
+   `ctx.tool.hook("execute.before" | "execute.after")` plus the event stream.
+
+### Tool mapping
+
+Skills speak in actions ("create a todo", "dispatch a subagent", "read a file"). On OpenCode these resolve to:
+
+<!-- BEGIN GENERATED TOOL MAP — source: .opencode/lib/tool-map.js -->
+
+- Create or update todos → `todowrite`
+- `Subagent (general-purpose):` → `subagent` with `agent: "general"`
+- Invoke a skill → OpenCode's native `skill` tool
+- Read files → `read`
+- Create, edit, or delete files → `edit`, `write` (or `patch` where offered)
+- Run shell commands → `shell`
+- Search files → `grep`, `glob`
+- Fetch a URL → `webfetch`
+
+For read-only codebase exploration, prefer `agent: "explore"`.
+To continue a subagent, call `subagent` again with the `sessionID` it returned.
+Use OpenCode's native `skill` tool to list and load skills.
+
+<!-- END GENERATED TOOL MAP -->
+
+(Verified against the OpenCode 2.2.5 tool inventory.)
 
 ## Troubleshooting
 
@@ -180,29 +248,16 @@ an update — run `opencode service restart`.
 
 ### Skills not found
 
-1. Use `skill` tool to list what's discovered
+1. Use the `skill` tool to list what's discovered
 2. Check that the plugin is loading (see above)
+3. Each skill needs a `SKILL.md` file with valid YAML frontmatter
 
-### Tool mapping
+### Bootstrap not appearing
 
-Skills speak in actions ("create a todo", "dispatch a subagent", "read a file"). On OpenCode these resolve to:
-
-<!-- BEGIN GENERATED TOOL MAP — source: .opencode/lib/tool-map.js -->
-
-- Create or update todos → `todowrite`
-- `Subagent (general-purpose):` → `subagent` with `agent: "general"`
-- Invoke a skill → OpenCode's native `skill` tool
-- Read files → `read`
-- Create, edit, or delete files → `edit`, `write` (or `patch` where offered)
-- Run shell commands → `shell`
-- Search files → `grep`, `glob`
-- Fetch a URL → `webfetch`
-
-For read-only codebase exploration, prefer `agent: "explore"`.
-To continue a subagent, call `subagent` again with the `sessionID` it returned.
-Use OpenCode's native `skill` tool to list and load skills.
-
-<!-- END GENERATED TOOL MAP -->
+1. Check the plugin is active (see above); the bootstrap is injected by its
+   `context` hook.
+2. Check `{"bootstrap": {"enabled": false}}` is not set in `superagent.json`.
+3. Run `opencode service restart` after config changes.
 
 ## The agent-team layer
 
@@ -232,4 +287,6 @@ above and [docs/superagent.md](https://github.com/taylorelley/superagent/blob/ma
 ## Getting Help
 
 - Report issues: https://github.com/taylorelley/superagent/issues
-- Full documentation: https://github.com/taylorelley/superagent/blob/main/docs/README.opencode.md
+- Agent-team layer and configuration: [docs/superagent.md](../docs/superagent.md)
+- Main documentation: https://github.com/taylorelley/superagent
+- OpenCode docs: https://opencode.ai/v2/docs/

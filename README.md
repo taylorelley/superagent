@@ -330,9 +330,8 @@ load in OpenCode 1.
 - Verify by asking: "What can Superagent do?"
 
 That one entry loads the skills, the agent roster and the TUI sidebar panel.
-There is no separate `tui.json` entry in OpenCode 2. Install and
-troubleshooting details are in [.opencode/INSTALL.md](.opencode/INSTALL.md),
-and the full OpenCode guide is [docs/README.opencode.md](docs/README.opencode.md).
+There is no separate `tui.json` entry in OpenCode 2. The full install,
+usage and troubleshooting guide is [.opencode/INSTALL.md](.opencode/INSTALL.md).
 
 ## Configuration
 
@@ -437,18 +436,14 @@ start, and it sends nothing about you or your project. Turn it off with
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) and the
-[PR template](.github/PULL_REQUEST_TEMPLATE.md) first. We don't generally
-accept new skills, and changes to skill content need eval evidence.
+[PR template](.github/PULL_REQUEST_TEMPLATE.md) first.
 
 1. Fork the repository
 2. Create a branch for your work
 3. Follow the `writing-skills` skill for creating and testing new and modified skills
-4. Submit a PR, filling in every section of the pull request template
+4. Open a PR using the pull request template
 
-Skill-behavior evals use the `quorum` harness from
-[superpowers-evals](https://github.com/prime-radiant-inc/superpowers-evals/),
-cloned into `evals/` (see `evals/README.md`). Plugin-infrastructure tests live
-in `tests/` (see [docs/testing.md](docs/testing.md)).
+Plugin tests live in `tests/` (see [docs/testing.md](docs/testing.md)).
 
 ## Updating
 
@@ -471,8 +466,6 @@ and reimplemented from scratch.
 
 - **Issues with this fork**: https://github.com/taylorelley/superagent/issues
 - **Upstream Superpowers**: https://github.com/obra/superpowers
-- **Discord**: [the upstream community](https://discord.gg/35wsABTejz) for general Superpowers discussion
-- **Release notes**: [RELEASE-NOTES.md](RELEASE-NOTES.md)
 - **Original announcement**: [Superpowers](https://blog.fsck.com/2025/10/09/superpowers/)
 
 ## License

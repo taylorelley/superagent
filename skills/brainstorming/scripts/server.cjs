@@ -213,7 +213,7 @@ const helperScript = fs.readFileSync(path.join(__dirname, 'helper.js'), 'utf-8')
 const helperInjection = '<script>\n' + helperScript + '\n</script>';
 
 /**
- * Reads the Superpowers version from the repository package manifest.
+ * Reads the Superagent version from the repository package manifest.
  * @return {string} The package version, or `'unknown'` when the manifest cannot be read or has no version.
  */
 

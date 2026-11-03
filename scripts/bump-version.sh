@@ -47,24 +47,11 @@ require_tool() {
   }
 }
 
-read_yaml_field() {
-  local file="$1" field="$2"
-  require_tool yq || return 1
-  FIELD="$field" yq -er '.[strenv(FIELD)] | select(tag == "!!str")' "$file"
-}
-
-write_yaml_field() {
-  local file="$1" field="$2" value="$3"
-  FIELD="$field" VALUE="$value" \
-    yq -i '.[strenv(FIELD)] = strenv(VALUE)' "$file"
-}
-
 read_manifest_field() {
   local file="$1"
 
   case "$file" in
     *.json) read_json_field "$@" ;;
-    *.yaml) read_yaml_field "$@" ;;
     *)
       echo "error: unsupported manifest format: $file" >&2
       return 1
@@ -77,7 +64,6 @@ write_manifest_field() {
 
   case "$file" in
     *.json) write_json_field "$@" ;;
-    *.yaml) write_yaml_field "$@" ;;
     *)
       echo "error: unsupported manifest format: $file" >&2
       return 1

@@ -16,18 +16,20 @@ fail() {
   exit 1
 }
 
-# make_fixture creates a repository fixture with version-bump configuration and supplied JSON and YAML manifests.
+# make_fixture creates a repository fixture whose .version-bump.json declares
+# package.json plus a second, caller-chosen manifest.
 make_fixture() {
   local repo="$1"
-  local yaml_body="$2"
+  local extra_path="$2"
+  local extra_body="$3"
 
-  mkdir -p "$repo/scripts" "$repo/.example-plugin"
+  mkdir -p "$repo/scripts" "$(dirname "$repo/$extra_path")"
   cp "$SCRIPT_SOURCE" "$repo/scripts/bump-version.sh"
-  cat >"$repo/.version-bump.json" <<'JSON'
+  cat >"$repo/.version-bump.json" <<JSON
 {
   "files": [
     { "path": "package.json", "field": "version" },
-    { "path": ".example-plugin/plugin.yaml", "field": "version" }
+    { "path": "$extra_path", "field": "plugin.version" }
   ],
   "audit": { "exclude": [] }
 }
@@ -38,39 +40,40 @@ JSON
   "version": "1.2.3"
 }
 JSON
-  printf '%s\n' "$yaml_body" >"$repo/.example-plugin/plugin.yaml"
+  printf '%s\n' "$extra_body" >"$repo/$extra_path"
 }
 
 happy_repo="$TEST_ROOT/happy"
-make_fixture "$happy_repo" $'name: superagent\nversion: 1.2.3'
+make_fixture "$happy_repo" ".example-plugin/plugin.json" '{ "plugin": { "version": "1.2.3" } }'
 
 /bin/bash "$happy_repo/scripts/bump-version.sh" --check >"$TEST_ROOT/check.out"
 /bin/bash "$happy_repo/scripts/bump-version.sh" --audit >"$TEST_ROOT/audit.out"
 /bin/bash "$happy_repo/scripts/bump-version.sh" 2.3.4 >"$TEST_ROOT/bump.out"
 
 [[ "$(jq -r '.version' "$happy_repo/package.json")" == "2.3.4" ]] \
-  || fail "JSON manifest was not bumped"
-[[ "$(yq -r '.version' "$happy_repo/.example-plugin/plugin.yaml")" == "2.3.4" ]] \
-  || fail "YAML manifest was not bumped"
+  || fail "package.json was not bumped"
+[[ "$(jq -r '.plugin.version' "$happy_repo/.example-plugin/plugin.json")" == "2.3.4" ]] \
+  || fail "nested JSON field was not bumped"
 
 jq -e '
   any(.files[]; .path == "package.json" and .field == "version")
 ' "$REPO_ROOT/.version-bump.json" >/dev/null \
   || fail "package.json is not registered for version bumps"
 
+# An unsupported manifest format must fail preflight before any file changes.
 invalid_repo="$TEST_ROOT/invalid"
-make_fixture "$invalid_repo" $'name: superagent\nversion: 123'
+make_fixture "$invalid_repo" ".example-plugin/plugin.toml" 'version = "1.2.3"'
 cp "$invalid_repo/package.json" "$TEST_ROOT/package.before"
-cp "$invalid_repo/.example-plugin/plugin.yaml" "$TEST_ROOT/plugin.before"
+cp "$invalid_repo/.example-plugin/plugin.toml" "$TEST_ROOT/plugin.before"
 
 if /bin/bash "$invalid_repo/scripts/bump-version.sh" 2.3.4 \
   >"$TEST_ROOT/invalid.out" 2>&1; then
-  fail "bump accepted a non-string YAML version"
+  fail "bump accepted an unsupported manifest format"
 fi
 
 cmp -s "$TEST_ROOT/package.before" "$invalid_repo/package.json" \
-  || fail "JSON manifest changed before YAML validation failed"
-cmp -s "$TEST_ROOT/plugin.before" "$invalid_repo/.example-plugin/plugin.yaml" \
-  || fail "invalid YAML manifest changed"
+  || fail "package.json changed before preflight failed"
+cmp -s "$TEST_ROOT/plugin.before" "$invalid_repo/.example-plugin/plugin.toml" \
+  || fail "unsupported manifest changed"
 
 echo "Version-bump tests passed"

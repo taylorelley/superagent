@@ -17,7 +17,7 @@ jobs:
           node-version: "22"
 
       # Belt-and-suspenders: don't rely on the runner image happening to
-      # ship a jq new enough for strenv() or a graphviz new enough for the
+      # ship jq (used by the version-bump script) or a graphviz new enough for the
       # writing-skills fixture, since both tests fail confusingly otherwise.
       - name: Install test-only system tools
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq graphviz
