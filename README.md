@@ -330,9 +330,8 @@ load in OpenCode 1.
 - Verify by asking: "What can Superagent do?"
 
 That one entry loads the skills, the agent roster and the TUI sidebar panel.
-There is no separate `tui.json` entry in OpenCode 2. Install and
-troubleshooting details are in [.opencode/INSTALL.md](.opencode/INSTALL.md),
-and the full OpenCode guide is [docs/README.opencode.md](docs/README.opencode.md).
+There is no separate `tui.json` entry in OpenCode 2. The full install,
+usage and troubleshooting guide is [.opencode/INSTALL.md](.opencode/INSTALL.md).
 
 ## Configuration
 

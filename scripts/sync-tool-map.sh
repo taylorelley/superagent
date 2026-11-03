@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Regenerate the OpenCode tool-mapping regions in the documentation.
+# Regenerate the OpenCode tool-mapping region in .opencode/INSTALL.md.
 #
-# The mapping lives in .opencode/lib/tool-map.js. It used to be restated in
-# the plugin, INSTALL.md, and docs/README.opencode.md, which meant three
-# chances to drift out of sync. The docs now carry generated regions between
-# markers, and tests/opencode/test-tool-map-single-source.sh fails when they
-# do not match the source.
+# The mapping lives in .opencode/lib/tool-map.js. The install guide carries a
+# generated region between markers, and
+# tests/opencode/test-tool-map-single-source.sh fails when it does not match
+# the source.
 #
 # Run this after editing tool-map.js.
 set -euo pipefail

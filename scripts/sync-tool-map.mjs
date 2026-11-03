@@ -13,7 +13,7 @@ import { renderDocToolMap, DOC_MARKER_BEGIN, DOC_MARKER_END } from '../.opencode
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Documents that carry a generated region. */
-export const TARGETS = ['.opencode/INSTALL.md', 'docs/README.opencode.md'];
+export const TARGETS = ['.opencode/INSTALL.md'];
 
 const checkOnly = process.argv.includes('--check');
 const body = `${DOC_MARKER_BEGIN}\n\n${renderDocToolMap()}\n\n${DOC_MARKER_END}`;

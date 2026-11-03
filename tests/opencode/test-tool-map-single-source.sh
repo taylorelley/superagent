@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Test: the OpenCode tool mapping has exactly one source of truth
 #
-# The mapping used to be restated in the plugin, INSTALL.md, and
-# docs/README.opencode.md. This fails if the generated doc regions drift from
+# The mapping used to be restated in the plugin and the install docs. This
+# fails if the generated doc region in .opencode/INSTALL.md drifts from
 # .opencode/lib/tool-map.js.
 set -euo pipefail
 
@@ -19,7 +19,7 @@ fi
 
 # The OpenCode mapping must not be hand-written anywhere else. A stray bullet
 # list is exactly the drift this test exists to prevent.
-opencode_docs=$(find "$REPO_ROOT/.opencode" -name '*.md'; echo "$REPO_ROOT/docs/README.opencode.md")
+opencode_docs=$(find "$REPO_ROOT/.opencode" "$REPO_ROOT/docs" -name '*.md')
 strays=""
 while IFS= read -r doc; do
     [ -f "$doc" ] || continue
