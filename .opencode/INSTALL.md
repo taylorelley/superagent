@@ -173,7 +173,9 @@ opencode plugin add 'github:taylorelley/superagent#main'
 ```
 
 A branch moves, so that selects a line of development rather than pinning one.
-For a reproducible install, append a full commit SHA instead.
+For a reproducible install, append a release tag (`#v2026.11.0`; see the
+[releases](https://github.com/taylorelley/superagent/releases)) or a full
+commit SHA instead.
 
 ## How it works
 

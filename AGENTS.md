@@ -38,3 +38,5 @@ against `obra/superpowers` from this tree: the two projects have diverged.
   CI also runs ESLint, Prettier, and shellcheck (`npm run lint`,
   `npm run format:check`, `bash scripts/lint-shell.sh --all`).
 - Keep each PR to one change, and fill in the PR template.
+- Don't bump the version by hand. Every merge to `main` is released
+  automatically with a CalVer version; see `.github/RELEASING.md`.

@@ -13,6 +13,7 @@ Live in `tests/`. Currently:
 - `tests/writing-skills/` — bash tests for the graph renderer.
 - `tests/shell-lint/` — bash tests for `scripts/lint-shell.sh`.
 - `tests/version-bump/` — bash tests for `scripts/bump-version.sh`.
+- `tests/release/` — bash tests for `scripts/next-version.sh`, which picks the next release version.
 
 Run plugin tests via the relevant directory's `run-*.sh`, the individual
 `test-*.sh`, or `npm test` where the directory has a `package.json`.
