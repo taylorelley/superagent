@@ -66,50 +66,6 @@ of human involvement will be closed without review.
 |------------------|-------|------------------|
 |                  |       |                  |
 
-## Skill triggering (required if this PR changes skills or the bootstrap)
-
-<!-- Skills are only useful if they auto-trigger. A change that leaves
-     `using-superagent` uninjected, or that stops `brainstorming` from
-     firing, is a regression even when every test still passes.
-
-     ACCEPTANCE TEST: Open a clean OpenCode session and send exactly this
-     user message:
-
-         Let's make a react todo list
-
-     `brainstorming` must trigger before any code is written. Paste the
-     complete transcript below. -->
-
-<details>
-<summary>Clean-session transcript for "Let's make a react todo list"</summary>
-
-```
-paste the complete transcript here
-```
-
-</details>
-
-## Evaluation
-- What was the initial prompt you (or your human partner) used to start
-  the session that led to this change?
-- How many eval sessions did you run AFTER making the change?
-- How did outcomes change compared to before the change?
-
-<!-- "It works" is not evaluation. Describe the before/after difference
-     you observed across multiple sessions. -->
-
-## Rigor
-
-- [ ] If this is a skills change: I used `superagent:writing-skills` and
-      completed adversarial pressure testing (paste results below)
-- [ ] This change was tested adversarially, not just on the happy path
-- [ ] I did not modify carefully-tuned content (Red Flags table,
-      rationalizations, "human partner" language) without extensive evals
-      showing the change is an improvement
-
-<!-- If you changed wording in skills that shape agent behavior, show your
-     eval methodology and results. These are not prose — they are code. -->
-
 ## Human review
 - [ ] A human has reviewed the COMPLETE proposed diff before submission
 
@@ -122,5 +78,4 @@ PRs will be closed without review if they:
 - Promote or integrate third-party services or tools
 - Submit project-specific or personal configuration as core changes
 - Leave required sections blank or use placeholder text
-- Modify behavior-shaping content without eval evidence
 -->

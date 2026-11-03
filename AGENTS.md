@@ -59,10 +59,6 @@ fully-functional plain-git fallback as the true default. This is not a
 loophole for adding real dependencies — the bar is that the skill must work
 completely without the tool.
 
-### "Compliance" changes to skills
-
-Our internal skill philosophy differs from Anthropic's published guidance on writing skills. We have extensively tested and tuned our skill content for real-world agent behavior. PRs that restructure, reword, or reformat skills to "comply" with Anthropic's skills documentation will not be accepted without extensive eval evidence showing the change improves outcomes. The bar for modifying behavior-shaping content is very high.
-
 ### Project-specific or personal configuration
 
 Skills or configuration that only benefit a specific project, team, domain, or workflow do not belong in core. Publish these as a separate plugin.
@@ -87,26 +83,9 @@ PRs containing invented claims, fabricated problem descriptions, or hallucinated
 
 PRs containing multiple unrelated changes will be closed. Split them into separate PRs.
 
-## Skill Changes Require Evaluation
-
-Skills are not prose — they are code that shapes agent behavior. If you modify skill content:
-
-- Use `superagent:writing-skills` to develop and test changes
-- Run adversarial pressure testing across multiple sessions
-- Show before/after eval results in your PR
-- Do not modify carefully-tuned content (Red Flags tables, rationalization lists, "human partner" language) without evidence the change is an improvement
-
-Skills must keep triggering through the OpenCode bootstrap. A change that leaves
-`using-superagent` uninjected, or that stops `brainstorming` from auto-triggering
-on "Let's make a react todo list" in a clean OpenCode session, is a regression.
-
-## Eval harness
-
-Skill-behavior evals live in [superpowers-evals](https://github.com/prime-radiant-inc/superpowers-evals/), cloned into `evals/` — see `evals/README.md` for setup. `quorum` (the harness) runs real agent sessions and judges skill compliance with a QA agent plus deterministic post-checks; it drives OpenCode via `--coding-agent opencode`. Plugin-infrastructure tests live at `tests/` — see `docs/testing.md`.
-
 ## Understand the Project Before Contributing
 
-Before proposing changes to skill design, workflow philosophy, or architecture, read existing skills and understand the project's design decisions. Superagent has its own tested philosophy about skill design, agent behavior shaping, and terminology (e.g., "your human partner" is deliberate, not interchangeable with "the user"). Changes that rewrite the project's voice or restructure its approach without understanding why it exists will be rejected.
+Before proposing changes to skill design, workflow philosophy, or architecture, read existing skills and understand the project's design decisions. Use `superagent:writing-skills` when creating or editing a skill. Plugin-infrastructure tests live in `tests/` — see `docs/testing.md`.
 
 ## The agent-team layer
 

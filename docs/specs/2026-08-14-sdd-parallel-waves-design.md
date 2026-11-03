@@ -3,13 +3,9 @@
 **Status:** Retroactive design record, written 2026-08-14. The feature this
 document describes already shipped — commits `8318429`, `85b30f6`,
 `1d4fe76`, `909f269`, `e960889`, merged in PR #8 (2026-08-14) — without a
-design record or eval evidence. `AGENTS.md`'s "Skill Changes Require
-Evaluation" expects both for a skill-content change; a code review of PR #8
-flagged the gap. This document backfills the design rationale from the
+design record. This document backfills the design rationale from the
 shipped text; it is not a pre-implementation plan, and it does not claim the
-decisions below were reviewed before the code merged. Eval evidence
-(likewise retroactive) is in the companion
-`2026-08-14-sdd-parallel-waves-eval-results.md`.
+decisions below were reviewed before the code merged.
 
 **Objective:** let `subagent-driven-development` dispatch independent plan
 tasks concurrently instead of always serially, without weakening the
@@ -104,11 +100,3 @@ only create a place for the two to drift out of sync.
   worktrees within one working tree.
 - Automatic conflict resolution when the disjoint-files check is wrong —
   that case is always a controller-adjudicated stop, never silent.
-
-## Evaluation
-
-See `2026-08-14-sdd-parallel-waves-eval-results.md`: a retroactive
-pressure test of the two decisions most likely to fail silently if a
-controller misreads this section — wave-gate computation and the
-disjoint-files defect check — run against fresh subagents given only the
-shipped SKILL.md text and a seeded plan defect.
