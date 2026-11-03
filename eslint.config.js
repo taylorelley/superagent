@@ -53,6 +53,29 @@ export default [
     },
   },
 
+  // core/ and claude-code/ also run inside a Claude Code hooks module: an
+  // environment of its own with web APIs and a console, but no Node globals and
+  // no fetch (see docs/claude-code.md). Those are switched off here so a stray
+  // use fails lint rather than the plugin. core/ reads `process` only as
+  // `globalThis.process?.`, which this does not flag.
+  {
+    files: ['core/**/*.js', 'claude-code/**/*.js'],
+    languageOptions: {
+      globals: {
+        process: 'off',
+        Buffer: 'off',
+        __dirname: 'off',
+        __filename: 'off',
+        fetch: 'off',
+        setTimeout: 'off',
+        clearTimeout: 'off',
+        setInterval: 'off',
+        clearInterval: 'off',
+        setImmediate: 'off',
+      },
+    },
+  },
+
   // tests/brainstorm-server carries its own package.json with no "type"
   // field, so its .js files are CommonJS (they use require()), and
   // skills/brainstorming/scripts/server.cjs is CommonJS by extension.

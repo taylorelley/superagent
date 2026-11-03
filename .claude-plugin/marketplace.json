@@ -1,0 +1,13 @@
+{
+  "name": "superagent",
+  "owner": { "name": "taylorelley" },
+  "description": "The Superagent plugin for Claude Code",
+  "plugins": [
+    {
+      "name": "superagent",
+      "source": "./",
+      "description": "An agent team for Claude Code: skills, a specialist roster with per-role model routing, a job board and a council",
+      "version": "2026.11.0"
+    }
+  ]
+}

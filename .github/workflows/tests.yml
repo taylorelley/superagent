@@ -25,6 +25,18 @@ jobs:
       - name: OpenCode plugin tests
         run: bash tests/opencode/run-tests.sh
 
+      # The Claude Code CLI loads the hooks module in its own engine for
+      # `claude plugin validate` and `claude plugin test`; neither needs a
+      # sign-in or the network. Pinned to the version the mods API was verified
+      # against (docs/claude-code.md); bump it deliberately.
+      - name: Install the Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code@2.1.317
+
+      - name: Claude Code plugin tests
+        env:
+          REQUIRE_CLAUDE: "1"
+        run: bash tests/claude-code/run-tests.sh
+
       - name: Shell lint self-tests
         run: bash tests/shell-lint/test-lint-shell.sh
 

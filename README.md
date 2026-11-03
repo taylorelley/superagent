@@ -1,7 +1,8 @@
 # Superagent
 
-**An opinionated software development workflow for [OpenCode](https://opencode.ai),
-run by a team of specialist subagents that execute your plan in parallel waves.**
+**An opinionated software development workflow for [OpenCode](https://opencode.ai)
+and [Claude Code](https://code.claude.com), run by a team of specialist subagents
+that execute your plan in parallel waves.**
 
 Most coding agents start writing code when you finish typing. Superagent
 doesn't. It makes your agent work like a disciplined engineering team: pin
@@ -165,7 +166,8 @@ flowchart TB
   always sees the interfaces it consumes. No wave implementer touches the
   main checkout.
 - **Background dispatch.** Every member of a wave is dispatched in a single
-  message with OpenCode 2's `subagent` tool and `background: true`. The
+  message in the background (OpenCode 2's `subagent` tool with
+  `background: true`, or Claude Code's `Agent` tool). The
   controller processes each report as it arrives instead of waiting for the
   slowest task.
 - **Fresh context per task.** Each implementer gets a generated task brief,
@@ -221,7 +223,8 @@ job and can be routed to its own model:
 | `librarian` | External docs and API research | `librarian` |
 
 **Per-role model routing** is the reason the roster exists. OpenCode's
-`subagent` tool is told never to choose a model itself, so the reliable way
+`subagent` tool is told never to choose a model itself, and Claude Code's
+`Agent` tool takes only a family alias, so the reliable way
 to run reviewers on a different model from implementers is to make them
 different agents, each with its model pinned. With routing, cheap and fast
 models handle routine work and strong models handle the judgment calls:
@@ -241,8 +244,11 @@ models handle routine work and strong models handle the judgment calls:
 
 Out of the box every slot inherits your session model, so you get role
 separation and context isolation without cost control until you route
-slots. Use any IDs from `opencode models`. See
-[docs/superagent.md](docs/superagent.md#model-routing).
+slots. On OpenCode use any IDs from `opencode models`; on Claude Code use
+Claude aliases or ids (`haiku`, `opus`, `claude-opus-5-5`), and the
+`anthropic/...` values above work as they are. See
+[docs/superagent.md](docs/superagent.md#model-routing) and
+[docs/claude-code.md](docs/claude-code.md#model-routing).
 
 **The council** (optional): for decisions that are expensive to get wrong,
 `/council <question>` asks several distinct models the same question in
@@ -276,8 +282,8 @@ can drift from under pressure:
 
 ## Watching it work
 
-The plugin adds a panel to OpenCode's TUI sidebar for the human at the
-keyboard. It shows the plan's progress and current task, the main agent's
+The plugin adds a panel for the human at the keyboard: in OpenCode's TUI
+sidebar, or in a pane beside Claude Code's transcript. It shows the plan's progress and current task, the main agent's
 active skill and what it is doing, and one row per subagent with the tool
 call it is making right now, the files it owns, any ownership conflict, and
 what came back:
@@ -302,7 +308,26 @@ what came back:
 
 ## Installation
 
-Superagent is a plugin for [OpenCode](https://opencode.ai) 2. It uses the
+Superagent is a plugin for [OpenCode](https://opencode.ai) 2 and for
+[Claude Code](https://code.claude.com) 2.1.287 or later. Both get the same
+skills, roster, routing, job board, council, commands and panel.
+
+### Claude Code
+
+```text
+/plugin marketplace add taylorelley/superagent
+/plugin install superagent@superagent
+```
+
+The specialists are agent types named `superagent:<name>`, the main
+conversation takes the orchestrator role, and the panel opens beside the
+transcript (`/superagent` toggles it). Claude Code runs Claude models, so
+model routing takes Claude aliases and ids, and per-slot temperature does not
+apply. See [docs/claude-code.md](docs/claude-code.md) for everything else.
+
+### OpenCode
+
+Superagent uses the
 [OpenCode 2 plugin format](https://opencode.ai/v2/docs/plugins/) and does not
 load in OpenCode 1.
 
@@ -336,8 +361,9 @@ usage and troubleshooting guide is [.opencode/INSTALL.md](.opencode/INSTALL.md).
 ## Configuration
 
 Configuration lives in `~/.config/opencode/superagent.json` or
-`<project>/.opencode/superagent.json`. Comments and trailing commas are
-allowed.
+`<project>/.opencode/superagent.json` on OpenCode, and in
+`~/.claude/superagent.json` or `<project>/.claude/superagent.json` on Claude
+Code. The keys are the same. Comments and trailing commas are allowed.
 
 | Preset | What it does |
 |---|---|
@@ -351,10 +377,12 @@ allowed.
 | `/council <question>` | Ask several models and synthesize the answers |
 | `/preset [name] [--persist]` | Show or switch the preset |
 | `/update [install]` | Check for, or install, a Superagent update |
+| `/superagent` | Show or hide the panel (Claude Code) |
 
 The full schema, per-agent permission overrides, troubleshooting, and notes
 on how the plugin API behaves (checked against OpenCode's source) are in
-[docs/superagent.md](docs/superagent.md).
+[docs/superagent.md](docs/superagent.md); what differs on Claude Code is in
+[docs/claude-code.md](docs/claude-code.md).
 
 ## What's inside
 
@@ -385,10 +413,14 @@ on how the plugin API behaves (checked against OpenCode's source) are in
 
 ### Plugin
 
-- `.opencode/plugins/`: the server plugin entry point
-- `.opencode/lib/`: roster, routing, job board, council, commands, TUI panel
-- `.opencode/prompts/`: orchestrator, oracle and librarian prompts
-- `.opencode/tui/`: the sidebar panel
+- `core/`: what both hosts share: roster, config, presets, permissions,
+  routing, job board, council, bootstrap, tool maps, panel layout
+- `.opencode/plugins/`: the OpenCode server plugin entry point
+- `.opencode/lib/`: OpenCode's registration, commands, update installer and TUI data
+- `.opencode/prompts/`: orchestrator, oracle and librarian prompts (both hosts)
+- `.opencode/tui/`: the OpenCode sidebar panel
+- `.claude-plugin/`: the Claude Code plugin manifest and marketplace
+- `claude-code/`: the Claude Code hooks module and its translations
 
 Superagent has zero dependencies. The one optional extra is `gh-stack`, which
 `using-stacked-prs` detects at runtime. Without it, a plain git and forge CLI
@@ -414,11 +446,14 @@ fallback does the same job.
 Superagent began as [Superpowers](https://github.com/obra/superpowers) and made
 two deliberate bets:
 
-- **OpenCode only.** Upstream targets many coding agents. Superagent targets
-  one, so the skills aren't bent toward the lowest common denominator, and
-  plugin behavior can be checked against OpenCode's source instead of
-  assumed. See
-  [docs/superagent.md](docs/superagent.md#how-the-opencode-2-plugin-api-is-used).
+- **Two hosts, both with subagents.** Upstream targets many coding agents.
+  Superagent targets OpenCode and Claude Code, the two whose plugin APIs can
+  carry the whole agent team: roles enforced by permissions, per-role model
+  routing, and dispatch hooks the job board can see. One shared core keeps
+  them in step, and each host's plugin behavior is checked against that host
+  rather than assumed. See
+  [docs/superagent.md](docs/superagent.md#how-the-opencode-2-plugin-api-is-used)
+  and [docs/claude-code.md](docs/claude-code.md#how-it-is-built).
 - **An agent-team layer upstream doesn't have.** That means the specialist
   roster with per-role model routing, parallel waves in isolated worktrees,
   the job board's ownership checks, the council, and permission-enforced
@@ -447,13 +482,17 @@ Plugin tests live in `tests/` (see [docs/testing.md](docs/testing.md)).
 
 ## Updating
 
+On Claude Code, `claude plugin update superagent`, then `/reload-plugins`. On
+OpenCode:
+
 ```bash
 opencode plugin update github:taylorelley/superagent
 opencode service restart
 ```
 
-or `/update install` from inside a session. See
-[.opencode/INSTALL.md](.opencode/INSTALL.md#updating).
+On either, `/update install` from inside a session does the same. See
+[.opencode/INSTALL.md](.opencode/INSTALL.md#updating) and
+[docs/claude-code.md](docs/claude-code.md#commands).
 
 ## Community
 

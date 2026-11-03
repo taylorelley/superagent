@@ -1,0 +1,4 @@
+{
+  "description": "Superagent's hooks module: the agent roster, job board, routing, commands and panel",
+  "modules": ["./superagent.js"]
+}

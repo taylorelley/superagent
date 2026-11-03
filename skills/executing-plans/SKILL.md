@@ -11,7 +11,7 @@ Load plan, review critically, execute all tasks, report when complete.
 
 **Announce at start:** "I'm using the executing-plans skill to implement this plan."
 
-**Note:** Superagent works much better with access to subagents. OpenCode dispatches them with the `subagent` tool, so prefer superagent:subagent-driven-development over this skill unless subagents are unavailable.
+**Note:** Superagent works much better with access to subagents. OpenCode dispatches them with the `subagent` tool and Claude Code with the `Agent` tool, so prefer superagent:subagent-driven-development over this skill unless subagents are unavailable.
 
 ## The Process
 

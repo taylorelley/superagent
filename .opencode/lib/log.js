@@ -1,6 +1,9 @@
 /**
  * Logging and error containment.
  *
+ * The logger itself lives in `core/log.js`, shared with the Claude Code
+ * plugin; this module names the OpenCode host in its lines and adds the guards.
+ *
  * A throw out of a V2 hook fails the operation it intercepts — a model
  * request, a tool call — and a throw out of a transform is logged by OpenCode
  * and leaves that registration out, which looks exactly like the plugin
@@ -9,22 +12,11 @@
  * log loudly and return a fallback instead.
  */
 
-const PREFIX = '[superagent/opencode]';
+import { configureLog, debug, warn, error } from '../../core/log.js';
 
-const debugEnabled = (env = process.env) =>
-  env.SUPERAGENT_DEBUG === '1' || env.SUPERAGENT_DEBUG === 'true';
+configureLog({ prefix: '[superagent/opencode]' });
 
-export const debug = (...args) => {
-  if (debugEnabled()) console.error(PREFIX, '[debug]', ...args);
-};
-
-export const warn = (...args) => {
-  console.error(PREFIX, '[warn]', ...args);
-};
-
-export const error = (...args) => {
-  console.error(PREFIX, '[error]', ...args);
-};
+export { debug, warn, error };
 
 /**
  * Run `fn`, returning `fallback` if it throws or rejects.

@@ -11,7 +11,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 echo "=== Test: tool map single source ==="
 
 if node "$REPO_ROOT/scripts/sync-tool-map.mjs" --check; then
-    echo "  [PASS] Generated tool-map regions match .opencode/lib/tool-map.js"
+    echo "  [PASS] Generated tool-map regions match core/tool-map.js (OpenCode and Claude Code)"
 else
     echo "  [FAIL] Tool map has drifted; run scripts/sync-tool-map.sh"
     exit 1

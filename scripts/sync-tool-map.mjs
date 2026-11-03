@@ -8,25 +8,29 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { renderDocToolMap, DOC_MARKER_BEGIN, DOC_MARKER_END } from '../.opencode/lib/tool-map.js';
+import { renderDocToolMap, docMarkers } from '../core/tool-map.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Documents that carry a generated region. */
-export const TARGETS = ['.opencode/INSTALL.md'];
+/** Documents that carry a generated region, and whose host's map each carries. */
+export const TARGETS = [
+  { file: '.opencode/INSTALL.md', host: 'opencode' },
+  { file: 'docs/claude-code.md', host: 'claude' },
+];
 
 const checkOnly = process.argv.includes('--check');
-const body = `${DOC_MARKER_BEGIN}\n\n${renderDocToolMap()}\n\n${DOC_MARKER_END}`;
 
 let drifted = 0;
 let failures = 0;
 
-for (const relative of TARGETS) {
+for (const { file: relative, host } of TARGETS) {
   const filePath = path.join(repoRoot, relative);
   const original = fs.readFileSync(filePath, 'utf8');
+  const { begin, end: endMarker } = docMarkers(host);
+  const body = `${begin}\n\n${renderDocToolMap(host)}\n\n${endMarker}`;
 
-  const start = original.indexOf(DOC_MARKER_BEGIN);
-  const end = original.indexOf(DOC_MARKER_END);
+  const start = original.indexOf(begin);
+  const end = original.indexOf(endMarker);
   // `end <= start` means the markers are out of order, which would slice
   // garbage into the file rather than replacing the region.
   if (start === -1 || end === -1 || end <= start) {
@@ -35,7 +39,7 @@ for (const relative of TARGETS) {
     continue;
   }
 
-  const updated = original.slice(0, start) + body + original.slice(end + DOC_MARKER_END.length);
+  const updated = original.slice(0, start) + body + original.slice(end + endMarker.length);
   if (updated === original) continue;
 
   drifted += 1;

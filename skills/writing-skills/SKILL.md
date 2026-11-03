@@ -9,7 +9,7 @@ description: Use when creating new skills, editing existing skills, or verifying
 
 **Writing skills IS Test-Driven Development applied to process documentation.**
 
-**Personal skills live in OpenCode's skills directory** (`~/.config/opencode/skills/`, or the `skills.paths` entries in your `opencode.json`).
+**Personal skills live in your host's skills directory**: OpenCode's `~/.config/opencode/skills/` (or the `skills.paths` entries in your `opencode.json`), or Claude Code's `~/.claude/skills/`.
 
 You write test cases (pressure scenarios with subagents), watch them fail (baseline behavior), write the skill (documentation), watch tests pass (agents comply), and refactor (close loopholes).
 

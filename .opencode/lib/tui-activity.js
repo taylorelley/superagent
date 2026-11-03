@@ -25,11 +25,9 @@
  * nothing throws: a host that lacks an API gives an empty answer.
  */
 
-import path from 'path';
+import { PLAN_PATTERN, describeTool } from '../../core/activity.js';
 
-/** Where `writing-plans` saves plans. */
-export const PLAN_PATTERN =
-  /(?:^|[\s"'`(/])((?:[^\s"'`()]*\/)?docs\/superagent\/plans\/[^\s"'`()/]+\.md)/;
+export { PLAN_PATTERN, describeTool, planProgress, formatElapsed } from '../../core/activity.js';
 
 const LIVE_TOOL_STATES = new Set(['running', 'streaming', 'pending']);
 
@@ -56,42 +54,6 @@ export const sessionData = (context) => {
 
 const toolParts = (message) =>
   Array.isArray(message?.content) ? message.content.filter((part) => part?.type === 'tool') : [];
-
-const firstLine = (text) =>
-  String(text ?? '')
-    .split('\n')
-    .find((line) => line.trim()) ?? '';
-
-const base = (value) => (typeof value === 'string' && value ? path.basename(value) : '');
-
-/**
- * A tool call as a few words: the tool and the one argument that says what it
- * is touching. A column is narrow, so a path is reduced to its basename.
- */
-export const describeTool = (name, input) => {
-  const args = input && typeof input === 'object' ? input : {};
-  const file = base(args.filePath ?? args.file_path ?? args.path);
-  const detail =
-    {
-      edit: file,
-      write: file,
-      patch: file,
-      read: file,
-      shell: firstLine(args.command),
-      bash: firstLine(args.command),
-      glob: args.pattern,
-      grep: args.pattern,
-      webfetch: args.url,
-      websearch: args.query,
-      subagent: args.agent,
-      task: args.subagent_type ?? args.agent,
-      skill: args.id ?? args.name,
-    }[name] ??
-    file ??
-    '';
-  const tool = name || 'tool';
-  return detail ? `${tool} ${String(detail).trim()}` : tool;
-};
 
 /** The latest skill a session loaded, by tool call or by activation message. */
 export const activeSkill = (messages) => {
@@ -231,52 +193,4 @@ export const sessionPlanPath = (data, sessionID) => {
     if (found) return found;
   }
   return null;
-};
-
-const TASK_HEADING = /^#{2,4}\s+(Task\s+\d+[^\n]*)$/i;
-const CHECKBOX = /^\s*[-*]\s+\[( |x|X)\]/;
-
-/**
- * Progress through a `writing-plans` plan: checkboxes ticked out of the total,
- * and the task holding the first unticked one. A plan with no checkboxes still
- * reports its task count, with nothing marked done.
- */
-export const planProgress = (text) => {
-  const lines = String(text ?? '').split('\n');
-  let done = 0;
-  let total = 0;
-  let heading = null;
-  let current = null;
-  const tasks = [];
-  for (const line of lines) {
-    const task = line.match(TASK_HEADING);
-    if (task) {
-      heading = task[1].trim();
-      tasks.push(heading);
-      continue;
-    }
-    const box = line.match(CHECKBOX);
-    if (!box) continue;
-    total += 1;
-    if (box[1] === ' ') {
-      if (!current) current = heading;
-    } else {
-      done += 1;
-    }
-  }
-  if (total === 0) {
-    if (!tasks.length) return null;
-    return { done: 0, total: tasks.length, current: tasks[0], unit: 'tasks' };
-  }
-  return { done, total, current, unit: 'steps' };
-};
-
-/** `0:42`, `12:05`, `1:02:03`. */
-export const formatElapsed = (ms) => {
-  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return '';
-  const total = Math.floor(ms / 1000);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = String(total % 60).padStart(2, '0');
-  return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
 };
