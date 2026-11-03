@@ -49,7 +49,7 @@ const dedent = (lines) => {
  * Throws on a shape it does not recognise. That is intentional: these templates
  * are maintained upstream, and a silent fallback would register an agent whose
  * prompt is a page of markdown *about* dispatching rather than instructions to
- * follow. `tests/opencode/test-prompt-compose.mjs` runs this against every real
+ * follow. `tests/opencode/test-superagent.mjs` runs this against every real
  * template so an upstream edit fails a test instead of degrading a session.
  */
 export const extractDispatchTemplate = (text, label = 'template') => {
