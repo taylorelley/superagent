@@ -189,32 +189,34 @@ top to bottom, what the plan is, what the main agent is doing, and what each
 subagent is doing:
 
 ```text
- Plan                            2/4
+ Plan ━━━━━━━━━━━━━───────────── 2/4
  2026-11-02-demo.md
  ▸ Task 2: Count files
 
- Main · brainstorming
- ● subagent general             0:06
+ Main · brainstorming ──────────────
+ ◑ subagent general             0:06
 
- Subagents                       1/2
- ● general · Count files        0:06
-   shell sleep 6 && ls
-   owns src/api/**
-   ⚠ overlaps implementer
+ Subagents ───────────────────── 1/2
+ ◑ general · Count files        0:06
+ ├ shell sleep 6 && ls
+ ├ owns src/api/**
+ └ ⚠ overlaps implementer
  ✓ explore · Find callers       1:05
-   → Found 3 call sites in tui-…
+ └ Found 3 call sites in tui-pan…
 
- Superagent v0.1.0   team · 10 agents
+ Superagent v0.1.0  team · 10 agents
 ```
 
-(Captured from OpenCode 2.2.5's real TUI, with the conflict and second row
-added for illustration.)
+(The layout was captured from OpenCode 2.2.5's real TUI, with the conflict and
+second row added for illustration; the header rules, plan bar, spinner and tree
+guides were added later and are shown as the panel's unit renderer draws them.)
 
 - **Plan** — the `docs/superagent/plans/*.md` file the session is working
   from, found in the tool calls of the session or of one of its subagents
   (under `team` the orchestrator may not edit files, so a subagent usually
-  writes it). `2/4` counts ticked `- [x]` steps; `▸` is the task holding the
-  first unticked one. A plan without checkboxes reports its task count. No
+  writes it). `2/4` counts ticked `- [x]` steps, and the header's rule fills
+  in the success colour as they are ticked — never full until the last one,
+  never empty once one is; `▸` is the task holding the first unticked one. A plan without checkboxes reports its task count. No
   plan, no section.
 - **Main** — the skill the main agent last loaded (the "→ Skill" line in the
   main pane scrolls away; this one stays), what it is doing right now and for
@@ -226,7 +228,9 @@ added for illustration.)
   invisible), the files it declared it owns, and — in the warning colour — any
   running dispatch it overlapped when it started. A finished row adds what
   came back (`→ …`), or why it failed. States carry glyphs so an outcome reads
-  at a glance: `●` running, `✓` completed, `✗` error, `○` cancelled.
+  at a glance: a spinner (`◐◓◑◒`, a quarter turn per second, on the same
+  repaint that ticks the timers) while running, `✓` completed, `✗` error, `○`
+  cancelled. Detail lines hang off their row on a `├`/`└` tree guide.
 - **Footer** — the version (did my update land) and the preset with its roster
   size. A subsystem switched off gets its own line (`board off`); the defaults
   being on is not news.

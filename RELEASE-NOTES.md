@@ -86,6 +86,12 @@ from upstream's 6.3.0: this is a fork of Superpowers, not a continuation of it.
 - **Dispatch state at a glance.** The sidebar panel now shows a glyph and
   color per dispatch (running/completed/error/cancelled) instead of a bare
   list.
+- **A more legible panel, at the same size.** Section headers are bold and
+  ruled across the column; the Plan header's rule doubles as a progress bar;
+  running rows (and the main agent) show a spinner that turns on the existing
+  once-a-second repaint; detail lines hang off their row on a `├`/`└` tree
+  guide; the footer signs off with the name in bold accent. Colours still
+  come only from the theme, and no line was added.
 - **The roster is out of the way by default.** It sits behind the panel's
   footer line; clicking it lists every agent (routed slots first), paged with
   `+N more`.
