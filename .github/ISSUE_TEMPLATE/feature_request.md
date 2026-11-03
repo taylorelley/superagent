@@ -31,9 +31,7 @@ progress, and some were intentionally declined.
      third-party tool, it may belong as its own plugin instead. -->
 
 ## Environment (required)
-<!-- Required. We assume an agent wrote this request — tell us which one and
-     where it ran. We weigh proposals reasoned from documentation differently
-     than ones grounded in a real session where the problem actually came up. -->
+<!-- Required. If an agent wrote this request, say which model. -->
 
 | Field | Value |
 |-------|-------|

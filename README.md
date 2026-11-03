@@ -442,7 +442,7 @@ Read [AGENTS.md](AGENTS.md) and the
 1. Fork the repository
 2. Create a branch for your work
 3. Follow the `writing-skills` skill for creating and testing new and modified skills
-4. Submit a PR, filling in every section of the pull request template
+4. Open a PR using the pull request template
 
 Plugin tests live in `tests/` (see [docs/testing.md](docs/testing.md)).
 
