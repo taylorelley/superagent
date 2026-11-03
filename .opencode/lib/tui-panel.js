@@ -464,11 +464,17 @@ export const renderPanel = (model, h) => {
     if (!agents.length) {
       out.push(muted('  none registered'));
     } else {
-      for (const agent of orderAgents(agents).slice(0, agentRowLimit)) {
-        out.push(pair(`  ${agent.name}`, shortModel(agent.model) || INHERIT));
-      }
-      if (agents.length > agentRowLimit) {
-        out.push(actionable(`  +${agents.length - agentRowLimit} more`, onRevealMoreAgents));
+      // On the same tree guide as a row's details. Not an indent: OpenCode
+      // 2.2.5 trims leading spaces from a text inside a row box, which left
+      // the names flush with the headers and the "+N more" line indented.
+      const shown = orderAgents(agents).slice(0, agentRowLimit);
+      const more = agents.length > agentRowLimit;
+      shown.forEach((agent, i) => {
+        const guide = i === shown.length - 1 && !more ? '└ ' : '├ ';
+        out.push(pair(`${guide}${agent.name}`, shortModel(agent.model) || INHERIT));
+      });
+      if (more) {
+        out.push(actionable(`└ +${agents.length - agentRowLimit} more`, onRevealMoreAgents));
       }
     }
   }

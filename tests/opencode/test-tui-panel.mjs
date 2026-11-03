@@ -697,3 +697,15 @@ test('the footer signs off with the name in bold accent', () => {
   assert.equal(name.props.attributes, 1);
   assert.equal(tag.props.fg, 'muted');
 });
+
+test('the expanded roster hangs off the footer on a tree guide', () => {
+  const text = lines(render({ agents: roster(3), agentsExpanded: true }));
+  const names = text.filter((line) => line.includes('agent-'));
+  assert.deepEqual(
+    names.map((line) => line.slice(0, 2)),
+    ['├ ', '├ ', '└ '],
+  );
+  const paged = lines(render({ agents: roster(MAX_AGENT_ROWS + 1), agentsExpanded: true }));
+  assert.ok(paged.filter((line) => line.includes('agent-')).every((l) => l.startsWith('├ ')));
+  assert.ok(paged.includes('└ +1 more'), 'the overflow line closes the branch');
+});

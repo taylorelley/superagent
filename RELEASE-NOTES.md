@@ -90,8 +90,9 @@ from upstream's 6.3.0: this is a fork of Superpowers, not a continuation of it.
   ruled across the column; the Plan header's rule doubles as a progress bar;
   running rows (and the main agent) show a spinner that turns on the existing
   once-a-second repaint; detail lines hang off their row on a `├`/`└` tree
-  guide; the footer signs off with the name in bold accent. Colours still
-  come only from the theme, and no line was added.
+  guide (so does the expanded roster, whose indent OpenCode was trimming);
+  the footer signs off with the name in bold accent. Colours still come only
+  from the theme, and no line was added. Checked in OpenCode 2.2.5's real TUI.
 - **The roster is out of the way by default.** It sits behind the panel's
   footer line; clicking it lists every agent (routed slots first), paged with
   `+N more`.
