@@ -18,6 +18,25 @@ import { TOOL_ACTIONS } from './roster.js';
 
 const slash = (p) => String(p).replace(/\\/g, '/');
 
+const isAbsolutePath = (p) => p.startsWith('/') || /^[A-Za-z]:\//.test(p);
+
+/**
+ * Resolve `.` and `..` segments lexically. A leading `/` or `X:/` is kept and
+ * never climbed above; a relative path keeps `..` it cannot resolve.
+ */
+export const collapse = (p) => {
+  const drive = /^[A-Za-z]:\//.exec(p);
+  const prefix = drive ? drive[0] : p.startsWith('/') ? '/' : '';
+  const out = [];
+  for (const seg of p.slice(prefix.length).split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg !== '..') out.push(seg);
+    else if (out.length && out[out.length - 1] !== '..') out.pop();
+    else if (!prefix) out.push('..');
+  }
+  return prefix + out.join('/');
+};
+
 /**
  * A path as the rules may name it: relative to the project when it is inside
  * it, and absolute. A pattern like `.superagent/**`, or its any-depth form,
@@ -25,13 +44,10 @@ const slash = (p) => String(p).replace(/\\/g, '/');
  */
 export const pathCandidates = (file, cwd) => {
   if (typeof file !== 'string' || !file) return [];
-  const abs = slash(file);
-  const root = cwd ? slash(cwd).replace(/\/+$/, '') : '';
-  const isAbsolute = abs.startsWith('/') || /^[A-Za-z]:\//.test(abs);
-  if (!isAbsolute) {
-    const rel = abs.replace(/^\.\//, '');
-    return root ? [rel, `${root}/${rel}`] : [rel];
-  }
+  const input = slash(file);
+  const root = cwd ? collapse(slash(cwd)).replace(/\/+$/, '') : '';
+  if (!root && !isAbsolutePath(input)) return [collapse(input)];
+  const abs = collapse(isAbsolutePath(input) ? input : `${root}/${input}`);
   if (root && abs.startsWith(`${root}/`)) return [abs.slice(root.length + 1), abs];
   return [abs];
 };

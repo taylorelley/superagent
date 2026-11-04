@@ -234,6 +234,29 @@ test('rules follow OpenCode: last match wins, ask asks, * hides', () => {
   assert.equal(evaluate(mergeRules({ edit: 'deny' }), 'edit', []), 'deny');
 });
 
+test('a * action rule matches every action, last match wins', () => {
+  const rules = mergeRules({ '*': 'deny', read: 'allow' });
+  assert.equal(checkCall(rules, 'Bash', { command: 'ls' }).decision, 'deny');
+  assert.equal(checkCall(rules, 'Write', { file_path: '/w/a.js' }).decision, 'deny');
+  assert.equal(checkCall(rules, 'Read', { file_path: '/w/a.js' }), null);
+  assert.deepEqual(hiddenActions(rules, ['edit', 'shell', 'read']), ['edit', 'shell']);
+});
+
+test('dot segments cannot dodge a path rule', () => {
+  const cwd = '/work/project';
+  const rules = mergeRules({ edit: { '*': 'deny', '.superagent/**': 'allow' } });
+  for (const file_path of [
+    '/work/project/.superagent/../src/app.js',
+    '.superagent/../src/app.js',
+  ]) {
+    assert.equal(checkCall(rules, 'Write', { file_path }, { cwd }).decision, 'deny', file_path);
+  }
+  assert.equal(checkCall(rules, 'Write', { file_path: '.superagent/x/../plan.md' }, { cwd }), null);
+  assert.deepEqual(pathCandidates('/w/p/./a/../src/a.js', '/w/p'), ['src/a.js', '/w/p/src/a.js']);
+  assert.deepEqual(pathCandidates('../x.js', '/w/p'), ['/w/x.js']);
+  assert.deepEqual(pathCandidates('../x.js'), ['../x.js']);
+});
+
 test('tool calls map to rule actions and resources', () => {
   assert.deepEqual(pathCandidates('/w/p/src/a.js', '/w/p'), ['src/a.js', '/w/p/src/a.js']);
   assert.deepEqual(pathCandidates('./src/a.js', '/w/p'), ['src/a.js', '/w/p/src/a.js']);

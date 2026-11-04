@@ -102,7 +102,8 @@ export const evaluate = (rules, action, resource) => {
   );
   let effect;
   for (const rule of rules ?? []) {
-    if (normalizeAction(rule.action) !== action) continue;
+    const ruleAction = normalizeAction(rule.action);
+    if (ruleAction !== '*' && ruleAction !== action) continue;
     const re = patternToRegExp(rule.resource ?? '*');
     if (rule.resource === '*' || candidates.some((c) => re.test(c))) effect = rule.effect;
   }
@@ -110,14 +111,19 @@ export const evaluate = (rules, action, resource) => {
 };
 
 /**
- * Actions the rules remove outright: the last rule for the action denies
- * resource `*`. OpenCode hides such a tool from the agent rather than
- * prompting for it, and a host that can withhold a tool should do the same.
+ * Actions the rules remove outright: the last rule matching the action (its
+ * own, or a `*` rule) denies resource `*`. OpenCode hides such a tool from the
+ * agent rather than prompting for it, and a host that can withhold a tool
+ * should do the same. `actions` names candidates the rules may only reach
+ * through `*`; the actions the rules name themselves are always considered.
  */
-export const hiddenActions = (rules) => {
-  const last = new Map();
-  for (const rule of rules ?? []) last.set(normalizeAction(rule.action), rule);
-  return [...last.entries()]
-    .filter(([, rule]) => rule.resource === '*' && rule.effect === 'deny')
-    .map(([action]) => action);
+export const hiddenActions = (rules, actions = []) => {
+  const named = (rules ?? []).map((rule) => normalizeAction(rule.action)).filter((a) => a !== '*');
+  return [...new Set([...actions, ...named])].filter((action) => {
+    const last = (rules ?? []).findLast((rule) => {
+      const ruleAction = normalizeAction(rule.action);
+      return ruleAction === '*' || ruleAction === action;
+    });
+    return last?.resource === '*' && last.effect === 'deny';
+  });
 };

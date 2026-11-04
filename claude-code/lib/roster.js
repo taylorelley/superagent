@@ -114,7 +114,7 @@ export const composePrompt = (spec, text) =>
 
 /** The tools an agent's rules withhold outright. */
 export const withheldTools = (rules) =>
-  hiddenActions(rules).flatMap((action) => ACTION_TOOLS[action] ?? []);
+  hiddenActions(rules, Object.keys(ACTION_TOOLS)).flatMap((action) => ACTION_TOOLS[action] ?? []);
 
 /** Agent type names may hold letters, digits, `_` and `-`, up to 64 characters. */
 export const safeName = (name) =>
