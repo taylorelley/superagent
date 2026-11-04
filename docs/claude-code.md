@@ -243,6 +243,43 @@ applies, plus:
 | A slot or councillor names a non-Claude model | That model is dropped with a warning; the agent inherits. |
 | A command name is taken | Yours is kept; Superagent's is not registered, and the bootstrap says so once. |
 | The pane does not fit | It waits for room; `/superagent` opens it at any width. |
+| A plugin that runs first passes Superagent's prompt hooks by (Claude Code's security default does in Team and Enterprise organisations) | Agents, skills, board, commands and panel work; the orchestrator role and bootstrap do not. See [When another plugin runs first](#when-another-plugin-runs-first). |
+
+## When another plugin runs first
+
+Claude Code runs plugins' hooks in an order, and a plugin earlier in it can
+send an event on past the ones after it. Claude Code's built-in security
+default, `cc-plugin-sec-default@builtin`, runs first in Team and Enterprise
+organisations and on machines with managed settings. It keeps the system
+prompt and a conversation's opening context out of reach of plugins a person
+installs, so Superagent's `prompt.compose` hook (the orchestrator role) and
+`prompt.context` hook (the bootstrap and routing table) do not run. Claude
+Code says so in the transcript:
+
+```text
+superagent: its prompt.context hook was skipped. "cc-plugin-sec-default" runs first and sent the event on past it.
+```
+
+That is a policy, so Superagent does not try to deliver the same text another
+way. Instead, at the main conversation's first model request of a new session
+it checks whether those two hooks ran. If they did not, it:
+
+- says so once in the transcript, naming what was passed by and what still works;
+- shows `⚠ orchestrator off: org policy` in the panel and under `/preset`;
+- stops applying the orchestrator's routed model and its write guard (writes
+  only under `.superagent/`) to the main conversation. Without its role
+  prompt the model does not know it is meant to delegate, so the guard would
+  only refuse its edits.
+
+The specialist agent types, skills, job board, dispatch tracking, commands and
+panel are unaffected. To load Superagent's guidance in a session, run
+`/superagent:using-superagent`; the generated routing table is not part of
+that skill.
+
+A session that was reloaded or resumed is not checked, as the hooks need not
+run again there. Only an organisation can change the order, through managed
+settings (for example by making Superagent a managed plugin and listing the
+plugins that run first). Ask whoever administers your Claude Code settings.
 
 ## Troubleshooting
 

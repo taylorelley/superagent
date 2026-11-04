@@ -16,6 +16,11 @@
  * | sidebar panel | TUI `sidebar.content` slot | a pane (`ui.render` for `Pane`) |
  * | update check | `fetch` + cache file | `$.http.fetch` + `$.store` |
  *
+ * A plugin that runs first may pass `prompt.compose` and `prompt.context` by
+ * (Claude Code's built-in security default does, for Team and Enterprise
+ * organisations). `./lib/fallback.js` says how that is noticed; the session
+ * then drops the orchestrator's model and guard, and tells the person.
+ *
  * All behaviour that does not need the mods API lives in `../core/`, shared
  * with OpenCode, and `./lib/`, pure translations for Claude Code. This file
  * holds every `$` call, because a hooks module may only call the mods API from
@@ -45,6 +50,13 @@ import {
   councilUnavailableText,
 } from './lib/commands.js';
 import { drawPanel } from './lib/panel.js';
+import {
+  isFirstRequest,
+  judgeHostHooks,
+  isBlocked,
+  fallbackNotice,
+  fallbackLine,
+} from './lib/fallback.js';
 
 /** The main conversation, as a board session key. */
 const MAIN = 'main';
@@ -93,6 +105,10 @@ const state = {
     open: false,
   },
   lastBoard: null,
+  /** Which prompt hooks ran in this module's lifetime. */
+  hostHooks: { compose: false, context: false },
+  /** What a plugin that runs first passed by: null until judged. */
+  blocked: null,
   spawnSeq: 0,
   ticking: false,
 };
@@ -112,6 +128,41 @@ configureLog({
 });
 
 const isEnabled = (section) => state.settings?.[section]?.enabled !== false;
+
+/**
+ * The main thread's role as it actually applies: none when its system prompt
+ * section was passed by, so its model and write guard are not imposed on a
+ * conversation that was never told it is the orchestrator.
+ */
+const mainRole = () => (state.blocked?.role ? null : state.sessionRole);
+
+/** Judge, once, on the main thread's first request, whether our prompt hooks ran. */
+async function judgeHostHooksOnce($, step) {
+  if (state.blocked !== null || step.agentId) return;
+  state.blocked = { role: false, bootstrap: false };
+  let turns;
+  try {
+    turns = await $.session.turns();
+  } catch {
+    turns = undefined;
+  }
+  // A reloaded or resumed session: the hooks need not run again, so no verdict.
+  if (!isFirstRequest(step, turns)) return;
+  state.blocked = judgeHostHooks({
+    seen: state.hostHooks,
+    wantRole: Boolean(state.sessionRole),
+    wantBootstrap: Boolean(state.bootstrap),
+  });
+  logQueue.push({
+    level: 'debug',
+    text: `prompt hooks seen ${JSON.stringify(state.hostHooks)}; passed by ${JSON.stringify(state.blocked)}`,
+  });
+  if (isBlocked(state.blocked)) {
+    logQueue.push({ level: 'warn', text: fallbackNotice(state.blocked, state) });
+    $.ui.invalidate('ui.render');
+  }
+  flushLog($);
+}
 
 /** Write queued log lines: warnings once each to the transcript, debug to the debug log. */
 function flushLog($) {
@@ -386,8 +437,8 @@ const panelModel = () => {
   const settings = state.settings;
   const snapshot = board.boardSnapshots()[MAIN];
   const agents = [
-    ...(state.sessionRole
-      ? [{ name: `${state.pluginName} (main)`, model: state.sessionRole.model ?? null }]
+    ...(mainRole()
+      ? [{ name: `${state.pluginName} (main)`, model: mainRole().model ?? null }]
       : []),
     ...state.roster.registered.map((a) => ({ name: a.name, model: a.model })),
     ...state.council.registered.map((a) => ({ name: a.name, model: a.model })),
@@ -425,6 +476,7 @@ const panelModel = () => {
     pluginVersion: state.version,
     updateAvailable: state.update?.updateAvailable === true,
     latestVersion: state.update?.latestVersion ?? null,
+    hostNotice: fallbackLine(state.blocked),
     agentRowLimit: state.ui.agentRowLimit,
     dispatchRowLimit: state.ui.dispatchRowLimit,
   };
@@ -496,6 +548,8 @@ export function register(on) {
 
   // The orchestrator's role, as OpenCode's default agent carries it.
   on('prompt.compose', async ($, e, next) => {
+    state.hostHooks.compose = true;
+    if (state.blocked?.role) state.blocked = { ...state.blocked, role: false };
     const composed = await next(e);
     const role = state.sessionRole;
     if (!role) return composed;
@@ -513,7 +567,14 @@ export function register(on) {
 
   // The orchestrator's routed model and effort, on the main thread's requests.
   on('turn.step', async function* ($, e, next) {
-    const routed = state.sessionRole;
+    if (!e.agentId) {
+      try {
+        await judgeHostHooksOnce($, e);
+      } catch {
+        // Judging is advisory; the request goes on regardless.
+      }
+    }
+    const routed = mainRole();
     if (e.agentId || !routed || (!routed.model && !routed.effort)) return yield* next(e);
     return yield* next({
       ...e,
@@ -524,6 +585,8 @@ export function register(on) {
 
   // The bootstrap: `using-superagent`, the tool map and the routing table.
   on('prompt.context', async ($, e, next) => {
+    state.hostHooks.context = true;
+    if (state.blocked?.bootstrap) state.blocked = { ...state.blocked, bootstrap: false };
     const context = await next(e);
     if (!state.bootstrap) return context;
     return {
@@ -622,8 +685,8 @@ export function register(on) {
       ? agent
         ? state.rules[agent]
         : null
-      : state.sessionRole
-        ? state.sessionRole.rules
+      : mainRole()
+        ? mainRole().rules
         : null;
     const verdict = rules
       ? checkCall(rules, e.tool, e.input, {
@@ -655,7 +718,11 @@ export function register(on) {
     if (!state.commands.has('preset')) return next(e);
     if (!state.offeredCommands?.has('preset')) return { text: offText('preset') };
     const answer = presetCommand(state.settings, e.args);
-    if (!answer.persist) return { text: answer.text };
+    if (!answer.persist) {
+      const notice = fallbackLine(state.blocked);
+      const shows = !String(e.args ?? '').trim() || String(e.args).trim() === 'show';
+      return { text: notice && shows ? `${answer.text}\n${notice}` : answer.text };
+    }
 
     const name = answer.persist;
     let saved = false;

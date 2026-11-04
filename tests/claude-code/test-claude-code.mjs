@@ -31,6 +31,13 @@ import {
 import { checkCall, pathCandidates, toolRequest } from '../../claude-code/lib/tools.js';
 import { claudeConfigDir, configFiles } from '../../claude-code/lib/paths.js';
 import { presetCommand, updatePlan } from '../../claude-code/lib/commands.js';
+import {
+  isFirstRequest,
+  judgeHostHooks,
+  isBlocked,
+  fallbackNotice,
+  fallbackLine,
+} from '../../claude-code/lib/fallback.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -310,4 +317,55 @@ test('/update install pulls a checkout, otherwise asks Claude Code', () => {
     'update',
     'superagent',
   ]);
+});
+
+// ------------------------------------------------- another plugin runs first
+
+test('the prompt-hook verdict is taken on the first request of a new session only', () => {
+  assert.equal(isFirstRequest({ index: 0, messageCount: 15 }, 1), true);
+  assert.equal(isFirstRequest({ index: 0, messageCount: 15 }, 0), true);
+  assert.equal(isFirstRequest({ index: 1, messageCount: 15 }, 1), false);
+  assert.equal(isFirstRequest({ index: 0, agentId: 'a1' }, 1), false);
+  assert.equal(isFirstRequest({ index: 0 }, 3), false, 'a reloaded or resumed session');
+  assert.equal(isFirstRequest({ index: 0 }, undefined), false, 'turns unknown');
+});
+
+test('only a hook that was wanted and did not run counts as passed by', () => {
+  const seen = { compose: false, context: true };
+  assert.deepEqual(judgeHostHooks({ seen, wantRole: true, wantBootstrap: true }), {
+    role: true,
+    bootstrap: false,
+  });
+  assert.deepEqual(
+    judgeHostHooks({
+      seen: { compose: false, context: false },
+      wantRole: false,
+      wantBootstrap: false,
+    }),
+    { role: false, bootstrap: false },
+    'setDefaultAgent: false and no bootstrap want nothing',
+  );
+  assert.equal(isBlocked({ role: false, bootstrap: false }), false);
+  assert.equal(isBlocked(null), false);
+});
+
+test('the fallback notice names what was lost and what still works', () => {
+  assert.equal(fallbackNotice({ role: false, bootstrap: false }), null);
+  assert.equal(fallbackLine({ role: false, bootstrap: false }), null);
+
+  const both = fallbackNotice({ role: true, bootstrap: true }, { pluginName: 'superagent' });
+  assert.match(both, /the orchestrator role and the session bootstrap/);
+  assert.match(both, /agents, skills, job board and commands still work/);
+  assert.match(both, /no orchestrator model routing and no write guard/);
+  assert.match(both, /\/superagent:using-superagent/);
+  assert.doesNotMatch(both, /\u2014/, 'no em dashes');
+
+  const roleOnly = fallbackNotice({ role: true, bootstrap: false });
+  assert.doesNotMatch(roleOnly, /using-superagent/);
+  const bootOnly = fallbackNotice({ role: false, bootstrap: true });
+  assert.doesNotMatch(bootOnly, /write guard/);
+
+  assert.equal(fallbackLine({ role: true, bootstrap: true }), '⚠ orchestrator off: org policy');
+  assert.equal(fallbackLine({ role: false, bootstrap: true }), '⚠ bootstrap off: org policy');
+  assert.ok(fallbackLine({ role: true, bootstrap: true }).length <= 35, 'fits the sidebar');
 });

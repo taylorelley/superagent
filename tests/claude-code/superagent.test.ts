@@ -256,6 +256,133 @@ describe('main thread', () => {
   });
 });
 
+describe('when another plugin runs first', () => {
+  // Claude Code's built-in security default passes prompt.compose and
+  // prompt.context by in Team and Enterprise organisations. Here that is the
+  // test raising neither before the main thread's first request.
+  const routedToHaiku = {
+    '/home/tester/.claude/superagent.json': JSON.stringify({
+      agents: { models: { orchestrator: 'haiku' } },
+    }),
+  };
+
+  /** The engine beneath turn.step; returns the models the requests named. */
+  const steps = (on: any, turns: number) => {
+    const models: string[] = [];
+    on('session.turns', () => ({ value: turns }));
+    on('turn.step', async function* ($: any, e: any) {
+      models.push(e.model);
+      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [] };
+    });
+    return models;
+  };
+
+  const firstRequest = async ($: any) => {
+    const stream = $.turn.step({
+      turnId: 'turn-1',
+      index: 0,
+      model: 'claude-opus-5-5',
+      messageCount: 15,
+    } as any);
+    for await (const _ of stream) {
+      // drain
+    }
+  };
+
+  const composeAndContext = async ($: any) => {
+    await $.prompt.compose({
+      model: 'claude-opus-5-5',
+      promptModel: 'claude-opus-5-5',
+      surfaces: [],
+      tools: [],
+      outputStyle: null,
+      traits: [],
+    } as any);
+    await $.prompt.context({ blocks: [] } as any);
+  };
+
+  const editOutside = ($: any) =>
+    $.tool.check({
+      tool: 'Edit',
+      input: { file_path: '/work/project/src/app.js', old_string: 'a', new_string: 'b' },
+    } as any);
+
+  const setup = (on: any, turns: number) => {
+    mock.env(on, env);
+    const logs = engine(on);
+    mock.store(on);
+    files(on, routedToHaiku);
+    on('agent.register', ($: any, e: any) => ({ value: { agent: `superagent:${e.name}` } }));
+    on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'core', scope: 'shared' }] }));
+    on('prompt.context', () => ({ blocks: [] }));
+    on('tool.check', () => ({ decision: 'allow' }));
+    return { logs, models: steps(on, turns) };
+  };
+
+  test('passed by: says so, and drops the orchestrator model and write guard', async ($, on) => {
+    const { logs, models } = setup(on, 1);
+    await start($);
+    expect((await editOutside($)).decision).toBe('deny');
+    await firstRequest($);
+
+    const notice = logs.find((l) => l.includes('Another plugin that runs before Superagent'));
+    expect(notice).toContain('the orchestrator role and the session bootstrap');
+    expect(notice).toContain('/superagent:using-superagent');
+    expect(models).toEqual(['claude-opus-5-5']);
+    expect((await editOutside($)).decision).toBe('allow');
+
+    // Later requests stay plain, and the notice is not repeated.
+    const again = $.turn.step({
+      turnId: 'turn-1',
+      index: 1,
+      model: 'claude-opus-5-5',
+      messageCount: 17,
+    } as any);
+    for await (const _ of again) {
+      // drain
+    }
+    expect(models).toEqual(['claude-opus-5-5', 'claude-opus-5-5']);
+    expect(logs.filter((l) => l.includes('Another plugin')).length).toBe(1);
+  });
+
+  test('hooks ran: no notice, the role keeps its model and guard', async ($, on) => {
+    const { logs, models } = setup(on, 1);
+    await start($);
+    await composeAndContext($);
+    await firstRequest($);
+    expect(logs.some((l) => l.includes('Another plugin'))).toBe(false);
+    expect(models).toEqual(['haiku']);
+    expect((await editOutside($)).decision).toBe('deny');
+  });
+
+  test('a reloaded or resumed session is not judged', async ($, on) => {
+    const { logs, models } = setup(on, 4);
+    await start($);
+    await firstRequest($);
+    expect(logs.some((l) => l.includes('Another plugin'))).toBe(false);
+    expect(models).toEqual(['haiku']);
+    expect((await editOutside($)).decision).toBe('deny');
+  });
+
+  test('the panel and /preset show it', async ($, on) => {
+    setup(on, 1);
+    await start($);
+    await firstRequest($);
+    const shown = await $.command.run({ command: 'preset', args: '' } as any);
+    expect(shown.text).toContain('⚠ orchestrator off: org policy');
+    const ui = await $.ui.mount({
+      plugin: 'superagent',
+      surface: 'terminal',
+      component: 'Pane',
+      requestId: 'superagent',
+      props: { title: 'Superagent', isFocused: false, bodyColumns: 44 } as any,
+    });
+    expect(await ui.find({ type: 'Text', text: /orchestrator off: org policy/ })).toBeDefined();
+    expect(await ui.find({ type: 'Text', text: /superagent \(main\)/ })).toBeUndefined();
+    await ui.unmount();
+  });
+});
+
 describe('job board', () => {
   test('a dispatch overlapping a running write claim is told so', async ($, on) => {
     mock.env(on, env);

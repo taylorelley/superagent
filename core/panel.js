@@ -249,6 +249,7 @@ export const renderPanel = (model, h) => {
     pluginVersion = null,
     updateAvailable = false,
     latestVersion = null,
+    hostNotice = null,
     agentRowLimit = MAX_AGENT_ROWS,
     dispatchRowLimit = MAX_DISPATCH_ROWS,
     onToggleAgents,
@@ -431,6 +432,11 @@ export const renderPanel = (model, h) => {
       ]),
     );
   }
+  // A host-side limit the reader should know about (Claude Code: a plugin
+  // that runs first passed Superagent's prompt hooks by). Absent on OpenCode.
+  if (hostNotice) {
+    out.push(h.text({ fg: theme.warning, marginTop: updateAvailable ? 0 : 1 }, [hostNotice]));
+  }
   // Name and version together on the left (they answer "which plugin, did my
   // update land"); preset and roster size on the right. That way round fits
   // the 35-column sidebar without truncating either half.
@@ -446,7 +452,7 @@ export const renderPanel = (model, h) => {
       {
         width: '100%',
         flexDirection: 'row',
-        marginTop: updateAvailable ? 0 : 1,
+        marginTop: updateAvailable || hostNotice ? 0 : 1,
         onMouseDown: onToggleAgents,
       },
       [
