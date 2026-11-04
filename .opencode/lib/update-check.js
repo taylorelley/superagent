@@ -11,36 +11,13 @@ import fs from 'fs';
 import path from 'path';
 import { warn, debug } from './log.js';
 import { snapshotDir, snapshotPath, writeSnapshot } from './tui-snapshot.js';
+import { REPO_OWNER, REPO_NAME, updateResult, isFresh } from '../../core/versions.js';
 
-export const REPO_OWNER = 'taylorelley';
-export const REPO_NAME = 'superagent';
+export { REPO_OWNER, REPO_NAME, compareVersions } from '../../core/versions.js';
 
 /** Where the last check result is cached, alongside the TUI snapshots. */
 export const cachePath = (configDir) =>
   configDir ? path.join(snapshotDir(configDir), 'update-check.json') : null;
-
-/**
- * Compare two `x.y.z`-style version strings.
- *
- * Missing parts are treated as 0, so "1.2" equals "1.2.0". A non-numeric part
- * compares as 0 — good enough for this project's CalVer `YYYY.M.MICRO`
- * versions (which also sort above the old `0.x` line), and it never throws on a
- * malformed string from a broken fetch.
- */
-export const compareVersions = (a, b) => {
-  const parts = (v) =>
-    String(v ?? '')
-      .split('.')
-      .map((p) => parseInt(p, 10) || 0);
-  const pa = parts(a);
-  const pb = parts(b);
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i += 1) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (diff !== 0) return diff > 0 ? 1 : -1;
-  }
-  return 0;
-};
 
 /** Read the cache, or null when there is none to read. */
 export const readCache = (filePath) => {
@@ -132,18 +109,10 @@ export const checkForUpdate = async ({
   fetchImpl = fetch,
 } = {}) => {
   const cached = readCache(cacheFile);
-  const intervalMs = Math.max(0, intervalHours) * 60 * 60 * 1000;
-  if (cached?.checkedAt && now - cached.checkedAt < intervalMs) return cached;
+  if (isFresh(cached, intervalHours, now)) return cached;
 
   const latestVersion = await fetchLatestVersion({ owner, repo, fetchImpl });
-  const result = {
-    checkedAt: now,
-    currentVersion: currentVersion ?? null,
-    latestVersion: latestVersion ?? cached?.latestVersion ?? null,
-    updateAvailable: latestVersion
-      ? compareVersions(latestVersion, currentVersion) > 0
-      : (cached?.updateAvailable ?? false),
-  };
+  const result = updateResult({ cached, latestVersion, currentVersion, now });
   writeCache(cacheFile, result);
   return result;
 };

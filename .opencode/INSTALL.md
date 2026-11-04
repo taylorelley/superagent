@@ -1,7 +1,8 @@
 # Superagent for OpenCode
 
 The guide to installing, using, and troubleshooting Superagent on
-[OpenCode](https://opencode.ai).
+[OpenCode](https://opencode.ai). Using Claude Code instead? See
+[docs/claude-code.md](../docs/claude-code.md).
 
 ## Prerequisites
 
@@ -36,9 +37,9 @@ check first and report the result before editing `opencode.json`:
 2. Read the roster and command names Superagent will try to register,
    straight from source so this never drifts out of date with what actually
    ships: agent `key`s in
-   [`.opencode/lib/roster.js`](../.opencode/lib/roster.js), and command
+   [`core/roster.js`](../core/roster.js), and command
    names in the `COMMANDS` object in
-   [`.opencode/lib/commands.js`](../.opencode/lib/commands.js).
+   [`core/commands.js`](../core/commands.js).
 3. Cross-reference the two lists. If nothing collides, proceed with the
    install as normal.
 4. If something collides, tell the human before finishing the install and

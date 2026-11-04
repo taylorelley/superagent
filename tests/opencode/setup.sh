@@ -28,8 +28,12 @@ mkdir -p "$SUPERAGENT_DIR"
 cp -r "$REPO_ROOT/skills" "$SUPERAGENT_DIR/"
 
 # Install plugin. The plugin is multi-file (entry + lib/ + prompts/ + config/),
-# so the whole .opencode tree is copied, not just the entry point.
+# so the whole .opencode tree is copied, not just the entry point, along with
+# core/ (the host-neutral modules it shares with the Claude Code plugin) and
+# package.json (the version the plugin reports).
 cp -r "$REPO_ROOT/.opencode" "$SUPERAGENT_DIR/"
+cp -r "$REPO_ROOT/core" "$SUPERAGENT_DIR/"
+cp "$REPO_ROOT/package.json" "$SUPERAGENT_DIR/"
 
 # Register plugin via symlink (what OpenCode actually reads)
 mkdir -p "$OPENCODE_CONFIG_DIR/plugins"

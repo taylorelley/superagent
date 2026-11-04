@@ -1,6 +1,6 @@
-# Superagent — the OpenCode agent team
+# Superagent — the agent team
 
-Superagent is this fork's OpenCode-only agent-team layer, built on top of the
+Superagent is this fork's agent-team layer for OpenCode and Claude Code, built on top of the
 skills methodology it inherited from [Superpowers](https://github.com/obra/superpowers)
 (brainstorm → spec → plan → TDD → review → verify). This layer supplies the
 execution substrate — a roster of specialist agents, each routable to its own
@@ -8,6 +8,11 @@ model, coordinated by an orchestrator that schedules work rather than doing it.
 
 > **Fork-specific.** This layer lives only in `taylorelley/superagent`. It is
 > not part of upstream `obra/superpowers` and is not proposed for it.
+>
+> This page describes the team, and how the OpenCode plugin carries it. The
+> Claude Code plugin carries the same team from the same `core/` modules;
+> [docs/claude-code.md](claude-code.md) covers how it lands there and where
+> the two hosts differ.
 >
 > Agent-roster, job-board, and council concepts are adapted from
 > [oh-my-opencode-slim](https://github.com/alvinunreal/oh-my-opencode-slim)

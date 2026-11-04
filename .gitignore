@@ -3,3 +3,8 @@
 .DS_Store
 node_modules/
 
+# Written by Claude Code when it loads this folder with --plugin-dir: the mods
+# API's type declarations for that Claude Code version, and a tsconfig that
+# points at them. Regenerated on every load.
+.claude-plugin/types/
+/tsconfig.json

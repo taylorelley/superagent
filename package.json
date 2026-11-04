@@ -1,7 +1,7 @@
 {
   "name": "superagent",
   "version": "2026.11.0",
-  "description": "Superagent skills and runtime bootstrap for OpenCode",
+  "description": "Superagent skills and agent team for OpenCode and Claude Code",
   "type": "module",
   "repository": {
     "type": "git",
@@ -31,7 +31,9 @@
     "tdd",
     "debugging",
     "collaboration",
-    "workflow"
+    "workflow",
+    "claude-code",
+    "claude-code-plugin"
   ],
   "devDependencies": {
     "@eslint/js": "^10.0.1",
