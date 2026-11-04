@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "2026.11.0",
+  "version": "2026.11.1",
   "description": "Superagent skills and agent team for OpenCode and Claude Code",
   "type": "module",
   "repository": {

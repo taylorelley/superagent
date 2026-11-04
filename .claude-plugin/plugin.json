@@ -1,11 +1,19 @@
 {
   "name": "superagent",
-  "version": "2026.11.0",
+  "version": "2026.11.1",
   "description": "An agent team for Claude Code: TDD, debugging and planning skills, a specialist roster with per-role model routing, a job board that stops parallel agents colliding, and a council",
-  "author": { "name": "taylorelley" },
+  "author": {
+    "name": "taylorelley"
+  },
   "homepage": "https://github.com/taylorelley/superagent",
   "repository": "https://github.com/taylorelley/superagent",
   "license": "MIT",
-  "keywords": ["skills", "agents", "subagents", "tdd", "orchestration"],
+  "keywords": [
+    "skills",
+    "agents",
+    "subagents",
+    "tdd",
+    "orchestration"
+  ],
   "hooks": "./claude-code/hooks.json"
 }
