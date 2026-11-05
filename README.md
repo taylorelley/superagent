@@ -306,6 +306,17 @@ what came back:
  Superagent v0.1.0  team · 10 agents
 ```
 
+## Codex
+
+A native Codex adapter is available for testing on `codex-cli 0.166.0-alpha.1`.
+It reuses the shared skills, roster, routing, ownership board, council and panel
+renderer. Native acceptance covers installation, hook execution, model/effort
+routing, fresh context, parallel children and sealed roles. Implementation is
+complete within the plugin-only scope. Command skills,
+a text/watch panel, and role refresh/new-session behavior provide the documented
+Codex adaptations; no Codex source changes are required. See [docs/codex.md](docs/codex.md)
+for installation, command skills, the text/watch panel and the parity matrix.
+
 ## Installation
 
 Superagent is a plugin for [OpenCode](https://opencode.ai) 2 and for
@@ -413,14 +424,16 @@ on how the plugin API behaves (checked against OpenCode's source) are in
 
 ### Plugin
 
-- `core/`: what both hosts share: roster, config, presets, permissions,
+- `core/`: what the host adapters share: roster, config, presets, permissions,
   routing, job board, council, bootstrap, tool maps, panel layout
 - `.opencode/plugins/`: the OpenCode server plugin entry point
 - `.opencode/lib/`: OpenCode's registration, commands, update installer and TUI data
-- `.opencode/prompts/`: orchestrator, oracle and librarian prompts (both hosts)
+- `.opencode/prompts/`: orchestrator, oracle and librarian prompts (shared by all adapters)
 - `.opencode/tui/`: the OpenCode sidebar panel
 - `.claude-plugin/`: the Claude Code plugin manifest and marketplace
 - `claude-code/`: the Claude Code hooks module and its translations
+- `.codex-plugin/` and `.agents/plugins/`: Codex manifest and native marketplace
+- `codex/`: Codex hooks, role generation, command skills and text/watch panel
 
 Superagent has zero dependencies. The one optional extra is `gh-stack`, which
 `using-stacked-prs` detects at runtime. Without it, a plain git and forge CLI
@@ -446,14 +459,13 @@ fallback does the same job.
 Superagent began as [Superpowers](https://github.com/obra/superpowers) and made
 two deliberate bets:
 
-- **Two hosts, both with subagents.** Upstream targets many coding agents.
-  Superagent targets OpenCode and Claude Code, the two whose plugin APIs can
-  carry the whole agent team: roles enforced by permissions, per-role model
-  routing, and dispatch hooks the job board can see. One shared core keeps
-  them in step, and each host's plugin behavior is checked against that host
-  rather than assumed. See
-  [docs/superagent.md](docs/superagent.md#how-the-opencode-2-plugin-api-is-used)
-  and [docs/claude-code.md](docs/claude-code.md#how-it-is-built).
+- **Host adapters over one shared core.** OpenCode and Claude Code expose
+  native agent-team integration. Codex uses the same workflow skills and core
+  with documented plugin-level adaptations. Each adapter is checked against
+  its host's actual APIs. See
+  [docs/superagent.md](docs/superagent.md#how-the-opencode-2-plugin-api-is-used),
+  [docs/claude-code.md](docs/claude-code.md#how-it-is-built), and
+  [docs/codex.md](docs/codex.md).
 - **An agent-team layer upstream doesn't have.** That means the specialist
   roster with per-role model routing, parallel waves in isolated worktrees,
   the job board's ownership checks, the council, and permission-enforced

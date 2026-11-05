@@ -11,7 +11,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 echo "=== Test: tool map single source ==="
 
 if node "$REPO_ROOT/scripts/sync-tool-map.mjs" --check; then
-    echo "  [PASS] Generated tool-map regions match core/tool-map.js (OpenCode and Claude Code)"
+    echo "  [PASS] Generated tool-map regions match core/tool-map.js (OpenCode, Claude Code and Codex)"
 else
     echo "  [FAIL] Tool map has drifted; run scripts/sync-tool-map.sh"
     exit 1
@@ -24,7 +24,7 @@ strays=""
 while IFS= read -r doc; do
     [ -f "$doc" ] || continue
     # A mapping bullet outside the generated region.
-    if awk '/BEGIN GENERATED TOOL MAP/{skip=1} /END GENERATED TOOL MAP/{skip=0; next} !skip' "$doc" \
+    if awk '/BEGIN GENERATED .*TOOL MAP/{skip=1} /END GENERATED .*TOOL MAP/{skip=0; next} !skip' "$doc" \
         | grep -q 'apply_patch`$'; then
         strays="$strays $doc"
     fi

@@ -12,13 +12,34 @@
  * 2.1.317 (`.claude-plugin/types/claude-code-tools`).
  */
 
-export const HOSTS = ['opencode', 'claude'];
+export const HOSTS = ['opencode', 'claude', 'codex'];
 
 /**
  * `action` is the vocabulary a skill uses; `tool` is what the host calls it.
  * Order is meaningful — it is the order readers see in every rendering.
  */
 export const TOOL_MAPS = {
+  codex: {
+    title: 'Codex',
+    mappings: [
+      { action: 'Create or update todos', tool: '`update_plan`' },
+      {
+        action: '`Subagent (general-purpose):`',
+        tool: '`spawn_agent` with `agent_type` and `fork_context: false`',
+      },
+      { action: 'Invoke a skill', tool: 'Read its `SKILL.md` from the installed plugin' },
+      { action: 'Read files', tool: '`exec_command` with a read-only command' },
+      { action: 'Create, edit, or delete files', tool: '`apply_patch`' },
+      { action: 'Run shell commands', tool: '`exec_command`' },
+      { action: 'Search files', tool: '`exec_command` with `rg`' },
+      { action: 'Fetch a URL', tool: 'the available web tool or an approved fetch command' },
+    ],
+    notes: [
+      'Tools may be namespaced; use the inventory supplied by the host.',
+      'Use `send_input` to continue a child and `wait_agent` to await its result.',
+      'Spawning is asynchronous; dispatch independent children before waiting.',
+    ],
+  },
   opencode: {
     title: 'OpenCode',
     mappings: [

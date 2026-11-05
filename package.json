@@ -1,7 +1,7 @@
 {
   "name": "superagent",
   "version": "2026.11.1",
-  "description": "Superagent skills and agent team for OpenCode and Claude Code",
+  "description": "Superagent skills and agent team for OpenCode, Claude Code and Codex",
   "type": "module",
   "repository": {
     "type": "git",
@@ -22,6 +22,9 @@
     },
     "./tui": {
       "import": "./.opencode/tui/superagent-tui.js"
+    },
+    "./codex": {
+      "import": "./codex/lib/adapter.js"
     }
   },
   "keywords": [
@@ -33,7 +36,9 @@
     "collaboration",
     "workflow",
     "claude-code",
-    "claude-code-plugin"
+    "claude-code-plugin",
+    "codex",
+    "codex-plugin"
   ],
   "devDependencies": {
     "@eslint/js": "^10.0.1",

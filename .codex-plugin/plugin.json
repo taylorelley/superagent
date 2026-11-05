@@ -1,0 +1,21 @@
+{
+  "name": "superagent",
+  "version": "2026.11.1",
+  "description": "Superagent shared workflow skills and Codex agent-team adapter",
+  "skills": [
+    "./skills",
+    "./codex/skills"
+  ],
+  "hooks": "./codex/hooks.json",
+  "interface": {
+    "displayName": "Superagent",
+    "shortDescription": "Planning, TDD, specialist agents and reviews",
+    "longDescription": "Shared workflow skills, a specialist roster, model routing, ownership tracking and a council for local Codex installations. Requires approved lifecycle hooks.",
+    "developerName": "taylorelley",
+    "category": "Productivity",
+    "websiteURL": "https://github.com/taylorelley/superagent",
+    "defaultPrompt": [
+      "Use Superagent to plan and implement a change with specialist review."
+    ]
+  }
+}

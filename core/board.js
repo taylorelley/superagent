@@ -456,3 +456,23 @@ export const runningChildren = (sessionID) =>
   [...(boards.get(sessionID)?.records.values() ?? [])]
     .filter((r) => r.state === 'running' && r.childSessionID)
     .map((r) => r.childSessionID);
+
+/** Lossless checkpoint for adapters whose hooks run in separate processes. */
+export const exportBoardState = () =>
+  Object.fromEntries([...boards].map(([id, board]) => [id, [...board.records.values()]]));
+
+/** Restore a checkpoint before handling an event. Reject malformed state. */
+export const restoreBoardState = (state) => {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) {
+    throw new Error('Invalid Superagent board checkpoint');
+  }
+  const restored = new Map();
+  for (const [id, records] of Object.entries(state)) {
+    if (!Array.isArray(records) || records.some((r) => !r || typeof r.id !== 'string')) {
+      throw new Error('Invalid Superagent board records');
+    }
+    restored.set(id, { records: new Map(records.map((r) => [r.id, r])) });
+  }
+  boards.clear();
+  for (const [id, board] of restored) boards.set(id, board);
+};

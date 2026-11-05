@@ -91,6 +91,7 @@ export const councillorPrompt = (member) =>
  */
 export const councilInstruction = (councillors, question, { host = 'opencode' } = {}) => {
   const claude = host === 'claude';
+  const codex = host === 'codex';
   if (!councillors.length) {
     return [
       'The council is not configured for this session.',
@@ -126,10 +127,16 @@ export const councilInstruction = (councillors, question, { host = 'opencode' } 
     `Dispatch all ${councillors.length} councillors in a SINGLE message, as parallel`,
     claude
       ? '`Agent` calls, each with the identical question:'
-      : '`subagent` calls, each with the identical question:',
+      : codex
+        ? '`spawn_agent` calls, each with the identical question:'
+        : '`subagent` calls, each with the identical question:',
     '',
     ...councillors.map((c) =>
-      claude ? `  - subagent_type: \`${c.name}\`` : `  - agent: \`${c.name}\``,
+      claude
+        ? `  - subagent_type: \`${c.name}\``
+        : codex
+          ? `  - agent_type: \`${c.name}\``
+          : `  - agent: \`${c.name}\``,
     ),
     '',
     'Give each one the full question and whatever context it needs to answer',

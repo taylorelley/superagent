@@ -18,3 +18,30 @@ Live in `tests/`. Currently:
 
 Run plugin tests via the relevant directory's `run-*.sh`, the individual
 `test-*.sh`, or `npm test` where the directory has a `package.json`.
+
+## Codex adapter
+
+`bash tests/codex/run-tests.sh` runs the adapter contracts and hook subprocess
+regressions. `--integration` (or `REQUIRE_CODEX=1`) additionally requires the
+Codex binary and runs `tests/codex/native.mjs`; it fails if the binary is missing.
+CI installs `@openai/codex@0.166.0-alpha.1` and requires native acceptance.
+
+The native fixture installs a temporary local marketplace and plugin, approves
+only that temporary bundle's exact hook hashes, and scripts all model responses
+through a loopback HTTP server. It does not touch the user's Codex home, use a
+live provider, or require model credentials. It verifies shared and command
+skill discovery, hook registration/execution, model and effort routing,
+fresh-context dispatch, three concurrent children, council shell/delegation
+withholding, an actual blocked shell side effect, project-isolated role-cache
+registration, and the durable board's child links and terminal states.
+
+A sandbox that forbids child processes or loopback sockets cannot run native
+acceptance. Run it with those execution permissions; do not count a skipped or
+mock-only run as native host validation. Skill guidance with real models and
+non-Linux platforms remain unverified.
+
+The accepted Codex completion criterion is plugin-scoped. Run
+`node codex/probe.mjs --integration` to collect both contract and native-host
+evidence. A passing run reports `pluginComplete: true`; the separate
+`fullParity` field records strict cross-host differences and does not require
+changes to Codex. Missing, stale or failed evidence still prevents completion.

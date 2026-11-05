@@ -11,6 +11,10 @@
     {
       "path": ".claude-plugin/marketplace.json",
       "field": "plugins.0.version"
+    },
+    {
+      "path": ".codex-plugin/plugin.json",
+      "field": "version"
     }
   ],
   "audit": {

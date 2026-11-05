@@ -16,6 +16,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 export const TARGETS = [
   { file: '.opencode/INSTALL.md', host: 'opencode' },
   { file: 'docs/claude-code.md', host: 'claude' },
+  { file: 'docs/codex.md', host: 'codex' },
 ];
 
 const checkOnly = process.argv.includes('--check');

@@ -20,6 +20,20 @@
  * and follow-ups are spelled.
  */
 export const DISPATCH = {
+  codex: {
+    field: '`agent_type`',
+    tool: '`spawn_agent`',
+    builtins: [
+      { name: 'explorer', use: 'read-only codebase reconnaissance' },
+      { name: 'default', use: 'a task outside the specialist roster' },
+    ],
+    background: [
+      'Dispatch independent tasks with `spawn_agent` before waiting.',
+      'Use fresh context (`fork_context: false` where offered).',
+      'Continue a child with `send_input`; await results with `wait_agent`.',
+      'Use the actual tool inventory if your Codex version names these differently.',
+    ],
+  },
   opencode: {
     field: '`agent`',
     tool: '`subagent`',
@@ -125,7 +139,8 @@ export const renderConflicts = (conflicts, { host = 'opencode' } = {}) => {
   if (!conflicts?.length) return '';
 
   const label = (c) => (c.kind === 'command' ? `command \`/${c.name}\`` : `agent \`${c.name}\``);
-  const where = host === 'claude' ? 'Claude Code setup' : 'OpenCode config';
+  const where =
+    host === 'codex' ? 'Codex setup' : host === 'claude' ? 'Claude Code setup' : 'OpenCode config';
   const agentClash = conflicts.some((c) => c.kind !== 'command');
 
   return [
