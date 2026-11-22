@@ -18,7 +18,7 @@
  */
 
 import { skillsDir, resolveConfigDir } from '../lib/paths.js';
-import { getBootstrapContent, injectBootstrap } from '../lib/bootstrap.js';
+import { injectProjectBootstrap } from '../lib/bootstrap.js';
 import { loadConfig } from '../lib/config-schema.js';
 import { registerAgents, preloadPrompts, warnConflicts } from '../lib/agents.js';
 import { discoverSkills, registerSkills, watchSkills } from '../lib/skills.js';
@@ -134,9 +134,7 @@ const setup = async (ctx) => {
       if (typeof temperature === 'number' && event.options?.temperature === undefined) {
         event.options.temperature = temperature;
       }
-      if (settings.bootstrap?.enabled !== false) {
-        injectBootstrap(event.messages, getBootstrapContent(skillsDir, state.routingTable));
-      }
+      injectProjectBootstrap(event.messages, directory, state.routingTable, settings);
       board.injectBoard(event.messages, event.sessionID, settings);
     }),
   );

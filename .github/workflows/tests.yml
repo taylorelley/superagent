@@ -22,6 +22,13 @@ jobs:
       - name: Install test-only system tools
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq graphviz
 
+      - name: Supercritical Rust checks and interlock walkthrough
+        run: |
+          cargo fmt --check --manifest-path supercritical/Cargo.toml
+          cargo clippy --locked --manifest-path supercritical/Cargo.toml -- -D warnings
+          cargo build --locked --manifest-path supercritical/Cargo.toml
+          python3 supercritical/tests/interlock.py supercritical/target/debug/supercritical
+
       - name: OpenCode plugin tests
         run: bash tests/opencode/run-tests.sh
 

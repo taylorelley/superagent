@@ -74,7 +74,7 @@ export const withContent = (messages, index, content) => {
  * content check rather than a flag because another plugin may already have
  * injected it.
  */
-export const injectBootstrap = (messages, bootstrap) => {
+export const injectBootstrap = (messages, bootstrap, marker = BOOTSTRAP_MARKER) => {
   if (!bootstrap || !Array.isArray(messages) || !messages.length) return false;
 
   const index = messages.findIndex((m) => m?.role === 'user');
@@ -82,7 +82,7 @@ export const injectBootstrap = (messages, bootstrap) => {
   const content = Array.isArray(messages[index].content) ? messages[index].content : [];
   if (!content.length) return false;
 
-  if (content.some((part) => partText(part).includes(BOOTSTRAP_MARKER))) return false;
+  if (content.some((part) => partText(part).includes(marker))) return false;
 
   // Some providers join a message's text parts with no separator, so the
   // bootstrap brings its own blank line rather than run into the user's text.

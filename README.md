@@ -15,6 +15,9 @@ reconciles, and it does not implement anything itself.
 The skills trigger automatically. You don't call commands or remember a
 process. You describe what you want and Superagent runs the workflow.
 
+For requirements, verification and release evidence on safety-critical projects,
+see [Supercritical](supercritical/README.md).
+
 ## Table of Contents
 
 - [The workflow](#the-workflow)

@@ -32,6 +32,7 @@ import { configureLog } from '../core/log.js';
 import { parseConfigText, resolveSettings } from '../core/config.js';
 import { usableMembers, councilInstruction } from '../core/council.js';
 import { renderBootstrap } from '../core/bootstrap.js';
+import { supercriticalContext, supercriticalPlan } from '../core/supercritical.js';
 import { renderRoutingTable, renderConflicts } from '../core/routing.js';
 import * as board from '../core/board.js';
 import { commandsToRegister } from '../core/commands.js';
@@ -588,12 +589,14 @@ export function register(on) {
     state.hostHooks.context = true;
     if (state.blocked?.bootstrap) state.blocked = { ...state.blocked, bootstrap: false };
     const context = await next(e);
-    if (!state.bootstrap) return context;
+    const enabled = state.cwd && (await $.fs.exists(`${state.cwd}/${supercriticalPlan}`));
+    if (!state.bootstrap && !enabled) return context;
     return {
       ...context,
       blocks: [
-        ...context.blocks.filter((b) => b.name !== 'superagent'),
-        { name: 'superagent', text: state.bootstrap },
+        ...context.blocks.filter((b) => b.name !== 'superagent' && b.name !== 'supercritical'),
+        ...(state.bootstrap ? [{ name: 'superagent', text: state.bootstrap }] : []),
+        ...(enabled ? [{ name: 'supercritical', text: supercriticalContext }] : []),
       ],
     };
   }).catch(passThrough);

@@ -997,6 +997,20 @@ test("plugin: a user's agent wins and the conflict reaches the model once", asyn
   );
 });
 
+test('plugin: Supercritical activates only after project opt-in and injects once', async () => {
+  await withPlugin({}, async (fake, dir) => {
+    const event = { messages: [userMessage('reset the fixture')], options: {} };
+    await fake.fire('session', 'context', event);
+    assert.doesNotMatch(messageText(event.messages[0]), /<supercritical>/);
+    const planDir = path.join(dir, 'project', '.supercritical');
+    fs.mkdirSync(planDir, { recursive: true });
+    fs.writeFileSync(path.join(planDir, 'plan.json'), '{}');
+    await fake.fire('session', 'context', event);
+    await fake.fire('session', 'context', event);
+    assert.equal(messageText(event.messages[0]).match(/<supercritical>/g)?.length, 1);
+  });
+});
+
 test('plugin: the context hook applies per-agent temperature only when unset', async () => {
   resetPromptCache();
   await withPlugin({}, async (fake) => {

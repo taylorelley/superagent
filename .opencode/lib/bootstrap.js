@@ -15,7 +15,9 @@
 import path from 'path';
 import fs from 'fs';
 import { skillsDir as defaultSkillsDir } from './paths.js';
-import { renderBootstrap } from '../../core/bootstrap.js';
+import { injectBootstrap, renderBootstrap } from '../../core/bootstrap.js';
+
+import { supercriticalContext, supercriticalPlan } from '../../core/supercritical.js';
 
 export { BOOTSTRAP_MARKER, withContent, injectBootstrap } from '../../core/bootstrap.js';
 
@@ -53,4 +55,13 @@ export const getBootstrapContent = (skillsDir = defaultSkillsDir, extra = '') =>
 
   cache = renderBootstrap(fs.readFileSync(skillPath, 'utf8'), { host: 'opencode', extra });
   return cache;
+};
+
+export const injectProjectBootstrap = (messages, directory, routing, settings) => {
+  if (settings.bootstrap?.enabled !== false) {
+    injectBootstrap(messages, getBootstrapContent(defaultSkillsDir, routing));
+  }
+  if (fs.existsSync(path.join(directory, supercriticalPlan))) {
+    injectBootstrap(messages, supercriticalContext, '<supercritical>');
+  }
 };

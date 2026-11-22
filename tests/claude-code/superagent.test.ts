@@ -194,6 +194,18 @@ describe('main thread', () => {
     expect(block!.text).toContain('run_in_background: true');
   });
 
+  test('Supercritical appears when the project has a plan', async ($, on) => {
+    mock.env(on, env);
+    engine(on);
+    mock.store(on);
+    files(on, { '/.supercritical/plan.json': '{}' });
+    on('prompt.context', () => ({ blocks: [] }));
+    await start($);
+    const context = await $.prompt.context({ blocks: [] } as any);
+    const block = context.blocks.find((b: any) => b.name === 'supercritical');
+    expect(block?.text).toContain('protected evidence');
+  });
+
   test('the orchestrator role is added to the system prompt', async ($, on) => {
     mock.env(on, env);
     engine(on);
