@@ -85,8 +85,46 @@ record and its raw artifact against protected acceptance. C/C++ static
 analysis and target test output can enter via the same record contract.
 [Toolkit Rust workflow](https://github.com/taylorelley/safety-analysis-toolkit/blob/main/docs/rust-proof-import.md)
 
-The first build uses manual evidence mapping and protected record publication.
-It leaves automatic toolkit ingestion, generated compliance matrices,
-machine-enforced task scheduling by safety claim, real target benches and the
-beginner acceptance trial as follow-up work. Use the project-specific
-assurance plan to set the required evidence and review depth.
+### Automated Rust intake and reviewer dossier
+
+Add a `rust_checks` entry to the plan for each mapped obligation. Use
+`{"type":"kani","property":"REQ-KEEP@host"}` for a toolkit Kani/CBMC property
+or `{"type":"libtest","test":"tests::reset_during_fault_keeps_inhibit"}` for a
+test case. Set each obligation's method to `proof` or `test` respectively.
+Capture one native libtest JSON suite with the pinned nightly. Run the toolkit
+Rust importer and retain its stdout JSON, input bundle, native artifacts and
+any counterexample file. The candidate file list must cover the toolkit input
+inventory, including `rust-verification.json`. The CLI handles the
+Supercritical plan and the toolkit input bundle as separate digests.
+
+Create a producer receipt with the pre-run candidate digest, producer and
+author identities, captured exit statuses, paths relative to the project, and
+artifact digests. The replay script shows the exact schema and how to capture
+command and toolchain provenance. Ingest before moving the reviewed records and
+their artifacts to protected storage.
+
+```sh
+supercritical ingest-rust PROJECT .safety/receipt.json
+supercritical dossier PROJECT TRUSTED_DIR > dossier.json
+```
+
+Intake emits staged submissions for successful and unsuccessful checks. Exit
+1 means at least one mapped check is incomplete or failed. Exit 2 means the
+receipt or captures could not be ingested. Keep the native proof plan under
+review. The adapter verifies agreement across records and does not grant
+producer identity or acceptance. In protected CI, authenticate the producing
+job and review the results before recording acceptance.
+
+The dossier uses the same rules as `gate` and includes the candidate manifest,
+requirement-to-obligation links, proof scopes, artifact hashes, recorded review
+decisions, open blockers and the release decision. Define optional
+`objectives` with a description and obligation IDs to produce the project
+objective matrix. Its entries reflect the project's mapping. The dossier is
+also emitted for a blocked candidate and uses exit 1 in that case.
+
+The **Supercritical native evidence** workflow runs the pinned toolkit and
+Kani/CBMC against the reference and mutated interlocks and archives both
+dossiers. Its synthetic approvals are isolated from production release.
+Machine-enforced scheduling by safety claim, protected producer authentication
+for a live project, real target benches and the beginner trial remain follow-up
+work.

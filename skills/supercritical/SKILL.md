@@ -38,7 +38,9 @@ integration and use `impact` against the previous candidate manifest.
 Default to Rust. For another language, record the basis for its use, toolchain
 and verification methods. Derive test expectations from requirements. Collect
 native test, proof and target observations against the exact candidate. Record
-proof scope, bounds and assumptions. Submit records with `import`. Discuss
+proof scope, bounds and assumptions. Submit records with `import`, or use `ingest-rust` for supported native Rust
+receipts. Generate a reviewer package with `dossier` against the protected
+evidence directory. Discuss
 failed or unavailable checks as outstanding work and open a problem report when
 the project calls for one.
 

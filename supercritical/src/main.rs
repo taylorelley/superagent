@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod model;
+mod rust_evidence;
 
 use model::*;
 use serde::{de::DeserializeOwned, Serialize};
@@ -154,6 +155,19 @@ fn check_plan(plan: &Plan, candidate: &Candidate) -> Vec<String> {
     {
         blockers.push("Plan validation for the stated target and intended use".into());
     }
+    for (id, objective) in &plan.objectives {
+        if objective.description.trim().is_empty()
+            || objective.obligations.is_empty()
+            || objective
+                .obligations
+                .iter()
+                .any(|id| !plan.obligations.contains_key(id))
+        {
+            blockers.push(format!(
+                "{id}: describe the objective and link valid obligations"
+            ));
+        }
+    }
     blockers
 }
 
@@ -184,17 +198,32 @@ fn valid_record(
     {
         return Err("producer is not authorized for this method".into());
     }
-    if item.outcome != Outcome::Pass || file_digest(root, &item.raw_path)? != item.raw_sha256 {
+    if item.outcome != Outcome::Pass {
+        return Err("run is unsuccessful".into());
+    }
+    if !evidence_integrity(root, item)? {
         return Err("run is unsuccessful or the raw evidence digest differs".into());
     }
     Ok(())
 }
 
-fn gate(root: &Path, trusted: &Path) -> Result<Gate> {
+fn evidence_integrity(root: &Path, item: &Evidence) -> Result<bool> {
+    if file_digest(root, &item.raw_path)? != item.raw_sha256 {
+        return Ok(false);
+    }
+    for (path, expected) in &item.artifacts {
+        if &file_digest(root, path)? != expected {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn dossier(root: &Path, trusted: &Path) -> Result<Dossier> {
     if trusted.canonicalize()?.starts_with(root.canonicalize()?) {
         return Err("use a protected evidence directory outside the candidate project".into());
     }
-    let (mut plan, candidate) = snapshot(root)?;
+    let (plan, candidate) = snapshot(root)?;
     let candidate_sha256 = sha(&serde_json::to_vec(&candidate)?);
     let trust: Trust = parse(&safe_path(trusted, "trust.json")?)?;
     if trust.version != 1 {
@@ -205,7 +234,8 @@ fn gate(root: &Path, trusted: &Path) -> Result<Gate> {
         blockers.push("The protected plan approval does not match the current plan".into());
     }
     let mut resolutions = BTreeMap::new();
-    plan.decisions.retain(|id, decision| {
+    let mut pending_decisions = BTreeMap::new();
+    for (id, decision) in &plan.decisions {
         let accepted = trust.decisions.get(id).is_some_and(|resolution| {
             resolution.owner == decision.owner
                 && trust.decision_owners.contains(&resolution.owner)
@@ -224,11 +254,17 @@ fn gate(root: &Path, trusted: &Path) -> Result<Gate> {
             );
         } else {
             blockers.push(format!("{id}: decision needed from {}", decision.owner));
+            pending_decisions.insert(id.clone(), decision.clone());
         }
-        !accepted
-    });
+    }
+    let mut evidence = BTreeMap::new();
     let mut accepted = BTreeMap::new();
     for (id, obligation) in &plan.obligations {
+        let mut row = EvidenceReview {
+            acceptance: trust.acceptances.get(id).cloned(),
+            result: None,
+            blocker: None,
+        };
         let result = (|| -> Result<_> {
             let approval = trust
                 .acceptances
@@ -250,7 +286,9 @@ fn gate(root: &Path, trusted: &Path) -> Result<Gate> {
                 return Err("evidence record digest differs".into());
             }
             let item: Evidence = serde_json::from_slice(&bytes)?;
-            valid_record(&item, id, obligation, &candidate_sha256, &trust, trusted)?;
+            row.result = Some(item);
+            let item = row.result.as_ref().expect("just loaded");
+            valid_record(item, id, obligation, &candidate_sha256, &trust, trusted)?;
             if obligation.independent
                 && (item.authors.contains(&approval.reviewer) || item.producer == approval.reviewer)
             {
@@ -262,8 +300,12 @@ fn gate(root: &Path, trusted: &Path) -> Result<Gate> {
             Ok(record) => {
                 accepted.insert(id, record);
             }
-            Err(error) => blockers.push(format!("{id}: {error}")),
+            Err(error) => {
+                row.blocker = Some(error.to_string());
+                blockers.push(format!("{id}: {error}"));
+            }
         }
+        evidence.insert(id.clone(), row);
     }
     let submission_sha256 = blockers
         .is_empty()
@@ -271,7 +313,7 @@ fn gate(root: &Path, trusted: &Path) -> Result<Gate> {
             serde_json::to_vec(&(
                 &candidate_sha256,
                 accepted,
-                resolutions,
+                &resolutions,
                 &trust.producers,
                 &trust.reviewers,
                 &trust.decision_owners,
@@ -292,12 +334,53 @@ fn gate(root: &Path, trusted: &Path) -> Result<Gate> {
         }
         Some(_) => "ready_for_release_review",
     };
-    Ok(Gate {
-        candidate_sha256,
-        submission_sha256,
-        status,
-        blockers,
-        pending_decisions: plan.decisions,
+    let resolved_ids: BTreeSet<_> = resolutions.into_keys().collect();
+    let resolved_decisions = trust
+        .decisions
+        .into_iter()
+        .filter(|(id, _)| resolved_ids.contains(id))
+        .collect();
+    let trace = plan
+        .requirements
+        .keys()
+        .map(|id| {
+            let claims = plan
+                .obligations
+                .iter()
+                .filter(|(_, item)| &item.requirement == id)
+                .map(|(key, _)| key.clone())
+                .collect();
+            (id.clone(), claims)
+        })
+        .collect();
+    let objectives = plan
+        .objectives
+        .iter()
+        .map(|(id, objective)| {
+            let blockers = objective
+                .obligations
+                .iter()
+                .filter(|claim| evidence.get(*claim).is_none_or(|row| row.blocker.is_some()))
+                .cloned()
+                .collect();
+            (id.clone(), ObjectiveReview { blockers })
+        })
+        .collect();
+    Ok(Dossier {
+        decision: Gate {
+            candidate_sha256,
+            submission_sha256,
+            status,
+            blockers,
+            pending_decisions,
+        },
+        candidate,
+        plan,
+        evidence,
+        trace,
+        objectives,
+        resolved_decisions,
+        release_authorization: trust.release,
     })
 }
 
@@ -309,6 +392,19 @@ fn write_new(path: &Path, contents: &[u8]) -> Result<()> {
     file.write_all(contents)?;
     file.sync_all()?;
     Ok(())
+}
+
+fn stage(root: &Path, bytes: &[u8]) -> Result<serde_json::Value> {
+    let digest = sha(bytes);
+    let directory = root.join(PROJECT).join("records");
+    fs::create_dir_all(&directory)?;
+    let path = directory.join(format!("{digest}.json"));
+    match write_new(&path, bytes) {
+        Ok(()) => (),
+        Err(_) if read(&path).ok().as_deref() == Some(bytes) => (),
+        Err(error) => return Err(error),
+    }
+    Ok(serde_json::json!({"record_sha256": digest, "path": path, "status": "submitted"}))
 }
 
 fn run(args: &[String]) -> Result<u8> {
@@ -348,35 +444,30 @@ fn run(args: &[String]) -> Result<u8> {
                 || obligation.method != evidence.method {
                 return Err("evidence belongs to a different candidate or method".into());
             }
-            if file_digest(Path::new(root), &evidence.raw_path)? != evidence.raw_sha256 {
+            if !evidence_integrity(Path::new(root), &evidence)? {
                 return Err("raw evidence digest differs".into());
             }
-            let digest = sha(&bytes);
-            let directory = Path::new(root).join(PROJECT).join("records");
-            fs::create_dir_all(&directory)?;
-            let path = directory.join(format!("{digest}.json"));
-            match write_new(&path, &bytes) {
-                Ok(()) => (),
-                Err(error) if read(&path).ok().as_deref() == Some(&bytes) => drop(error),
-                Err(error) => return Err(error),
-            }
-            print(&serde_json::json!({"record_sha256": digest, "path": path, "status": "submitted"}))?;
+            print(&stage(Path::new(root), &bytes)?)?;
         }
-        [command, root, trusted] if command == "gate" || command == "release" => {
-            let verdict = gate(Path::new(root), Path::new(trusted))?;
-            let status = verdict.status;
-            if command == "release" && status == "authorized" {
-                let (_, manifest) = snapshot(Path::new(root))?;
-                if sha(&serde_json::to_vec(&manifest)?) != verdict.candidate_sha256 {
-                    return Err("candidate changed during release".into());
-                }
-                print(&serde_json::json!({"decision": verdict, "manifest": manifest}))?;
+        [command, root, receipt] if command == "ingest-rust" => {
+            let (output, all_passed) = rust_evidence::ingest(Path::new(root), receipt)?;
+            print(&output)?;
+            return Ok(u8::from(!all_passed));
+        }
+
+        [command, root, trusted] if matches!(command.as_str(), "gate" | "release" | "dossier") => {
+            let report = dossier(Path::new(root), Path::new(trusted))?;
+            let status = report.decision.status;
+            if command == "dossier" {
+                print(&report)?;
+            } else if command == "release" && status == "authorized" {
+                print(&serde_json::json!({"decision": report.decision, "manifest": report.candidate}))?;
             } else {
-                print(&verdict)?;
+                print(&report.decision)?;
             }
             return Ok(u8::from(status == "blocked" || (command == "release" && status != "authorized")));
         }
-        _ => return Err("usage: supercritical init|plan|check PROJECT; impact PROJECT PREVIOUS_CANDIDATE; import PROJECT RECORD; gate|release PROJECT TRUSTED_DIR".into()),
+        _ => return Err("usage: supercritical init|plan|check PROJECT; impact PROJECT PREVIOUS_CANDIDATE; import PROJECT RECORD; ingest-rust PROJECT RECEIPT; gate|release|dossier PROJECT TRUSTED_DIR".into()),
     }
     Ok(0)
 }

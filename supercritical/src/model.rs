@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
     pub version: u32,
@@ -12,9 +12,32 @@ pub struct Plan {
     pub requirements: BTreeMap<String, Requirement>,
     pub obligations: BTreeMap<String, Obligation>,
     pub decisions: BTreeMap<String, Decision>,
+    #[serde(default)]
+    pub rust_checks: BTreeMap<String, RustCheck>,
+    #[serde(default)]
+    pub objectives: BTreeMap<String, Objective>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Objective {
+    pub description: String,
+    pub obligations: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct ObjectiveReview {
+    pub blockers: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RustCheck {
+    Kani { property: String },
+    Libtest { test: String },
+}
+
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Requirement {
     pub source: String,
@@ -22,7 +45,7 @@ pub struct Requirement {
     pub implementation: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Obligation {
     pub requirement: String,
@@ -40,7 +63,7 @@ pub enum Method {
     TargetValidation,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Decision {
     pub question: String,
@@ -50,7 +73,7 @@ pub struct Decision {
     pub affected_requirements: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trust {
     pub version: u32,
@@ -64,7 +87,7 @@ pub struct Trust {
     pub release: Option<Authorization>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Resolution {
     pub owner: String,
@@ -72,14 +95,14 @@ pub struct Resolution {
     pub source: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Acceptance {
     pub reviewer: String,
     pub record_sha256: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Authorization {
     pub authority: String,
@@ -99,6 +122,10 @@ pub struct Evidence {
     pub raw_sha256: String,
     pub observed: String,
     pub limitations: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub artifacts: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -123,4 +150,23 @@ pub struct Gate {
     pub status: &'static str,
     pub blockers: Vec<String>,
     pub pending_decisions: BTreeMap<String, Decision>,
+}
+
+#[derive(Serialize)]
+pub struct EvidenceReview {
+    pub acceptance: Option<Acceptance>,
+    pub result: Option<Evidence>,
+    pub blocker: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct Dossier {
+    pub decision: Gate,
+    pub candidate: Candidate,
+    pub plan: Plan,
+    pub evidence: BTreeMap<String, EvidenceReview>,
+    pub trace: BTreeMap<String, Vec<String>>,
+    pub objectives: BTreeMap<String, ObjectiveReview>,
+    pub resolved_decisions: BTreeMap<String, Resolution>,
+    pub release_authorization: Option<Authorization>,
 }

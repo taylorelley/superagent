@@ -1,0 +1,64 @@
+name: Supercritical native evidence
+
+on:
+  pull_request:
+    paths:
+      - 'supercritical/**'
+      - '.github/workflows/supercritical-native.yml'
+  push:
+    branches: [main, build/supercritical]
+    paths:
+      - 'supercritical/**'
+      - '.github/workflows/supercritical-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  interlock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: taylorelley/safety-analysis-toolkit
+          ref: 4c3148975e34b8c480d8230d17bf765856a103d8
+          path: toolkit
+          persist-credentials: false
+      - name: Install pinned Rust and Kani
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup toolchain install nightly-2026-08-21 --profile minimal --component rust-src,rustc-dev,llvm-tools
+          cd "$RUNNER_TEMP"
+          curl -fsSL https://github.com/model-checking/kani/releases/download/kani-0.68.0/kani-0.68.0-x86_64-unknown-linux-gnu.tar.gz -o kani.tar.gz
+          sha256sum --check <<'CHECKSUM'
+          32e2b484d73ede0bbf64a2cf0879c4259422497d8aec4ee67d448de9ae7843d3  kani.tar.gz
+          CHECKSUM
+          tar -xf kani.tar.gz
+          printf '%s\n' "$RUNNER_TEMP/kani-0.68.0/bin" >> "$GITHUB_PATH"
+      - name: Build the toolkit and Supercritical
+        run: |
+          cargo +1.99.1 build --locked --manifest-path toolkit/Cargo.toml
+          cargo +1.99.1 build --locked --manifest-path supercritical/Cargo.toml
+      - name: Verify both interlock candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LD_LIBRARY_PATH="$(rustc +nightly-2026-08-21 --print sysroot)/lib"
+          RUSTUP_TOOLCHAIN=nightly-2026-08-21 python3 supercritical/tests/native_interlock.py \
+            supercritical/target/debug/supercritical toolkit/target/debug/safety "$RUNNER_TEMP/interlock"
+      - name: Archive synthetic review packages and raw evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: supercritical-interlock-evidence
+          path: |
+            ${{ runner.temp }}/interlock/*/dossier.json
+            ${{ runner.temp }}/interlock/*/trusted/**
+          include-hidden-files: true

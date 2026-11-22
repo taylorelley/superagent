@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "invocations": {
+    "proof": {
+      "variant": "host",
+      "command": [
+        "cbmc",
+        "lib__RNvNtCs93VvMmNVVEc_3lib6proofs16reset_transition.out",
+        "--function",
+        "_RNvNtCs93VvMmNVVEc_3lib6proofs16reset_transition",
+        "--unwind",
+        "3",
+        "--unwinding-assertions",
+        "--trace",
+        "--json-ui"
+      ],
+      "toolchain": {
+        "kani": "0.68.0",
+        "cbmc": "6.11.0",
+        "rustc": "rustc 1.100.0-nightly (8925ea358 2026-08-20)\nbinary: rustc\ncommit-hash: 8925ea358a0f265ca61026aadc7ecc506c545cbe\ncommit-date: 2026-08-20\nhost: x86_64-unknown-linux-gnu\nrelease: 1.100.0-nightly\nLLVM version: 23.1.0",
+        "cargo": "cargo 1.100.0-nightly (514c56dd7 2026-08-19)",
+        "solver": "CBMC bundled SAT solver"
+      },
+      "checks": {
+        "format": "kani_cbmc",
+        "harness": "proofs::reset_transition",
+        "unwind": 3,
+        "completeness": [],
+        "safety_checks": [
+          "__rust_alloc.assertion.1",
+          "__rust_alloc.assertion.2",
+          "__rust_alloc_zeroed.assertion.1",
+          "__rust_alloc_zeroed.assertion.2",
+          "__rust_dealloc.assertion.1",
+          "__rust_dealloc.pointer_primitives.1",
+          "__rust_dealloc.pointer_primitives.2",
+          "__rust_dealloc.pointer_primitives.3",
+          "__rust_dealloc.pointer_primitives.4",
+          "__rust_dealloc.assertion.2",
+          "__rust_realloc.assertion.1",
+          "__rust_realloc.assertion.2",
+          "__rust_realloc.assertion.3"
+        ],
+        "obligations": {
+          "REQ-KEEP": {
+            "requirement": "REQ-KEEP",
+            "proposition": "Reset during an active sampled fault preserves inhibit",
+            "native_check": "proofs::reset_transition.assertion.1",
+            "reachability": [
+              "proofs::reset_transition.cover.1",
+              "proofs::reset_transition.reachability_check.1",
+              "proofs::reset_transition.reachability_check.3"
+            ],
+            "assumptions": [
+              "Fault and reset are sampled simultaneously."
+            ]
+          },
+          "REQ-CLEAR": {
+            "requirement": "REQ-CLEAR",
+            "proposition": "Reset after sampled fault clearance removes inhibit",
+            "native_check": "proofs::reset_transition.assertion.2",
+            "reachability": [
+              "proofs::reset_transition.cover.2",
+              "proofs::reset_transition.reachability_check.2",
+              "proofs::reset_transition.reachability_check.4"
+            ],
+            "assumptions": [
+              "Fault and reset are sampled simultaneously."
+            ]
+          }
+        }
+      }
+    }
+  }
+}
