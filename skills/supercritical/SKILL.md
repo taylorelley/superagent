@@ -31,9 +31,13 @@ observed behavior on the intended equipment.
 
 Use Superagent's planning, worktree and review workflow. Each task brief names
 requirement and obligation IDs, expected evidence, target variants, files and
-shared claims or assumptions. Serialize tasks with a shared write scope or a
-shared safety claim that they can invalidate. Replay affected checks after
-integration and use `impact` against the previous candidate manifest.
+shared claims or assumptions. Record task contracts and interface-to-obligation mappings in the plan.
+Use `schedule PROJECT` before dispatch and start only one returned wave at a
+time. Save the baseline candidate from `plan`. After integration, use
+`impact` and run `replay` with the project’s authorized CI runner. Record
+unresolved replay failures in the tracked work log, including the owner and
+affected obligations. On resume, read the work log before creating new
+records. Request fresh review for the merged candidate.
 
 Default to Rust. For another language, record the basis for its use, toolchain
 and verification methods. Derive test expectations from requirements. Collect

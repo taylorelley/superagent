@@ -16,6 +16,8 @@ pub struct Plan {
     pub rust_checks: BTreeMap<String, RustCheck>,
     #[serde(default)]
     pub objectives: BTreeMap<String, Objective>,
+    #[serde(default)]
+    pub work: crate::work::Work,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -136,7 +138,7 @@ pub enum Outcome {
     Incomplete,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Candidate {
     pub plan_sha256: String,
@@ -169,4 +171,5 @@ pub struct Dossier {
     pub objectives: BTreeMap<String, ObjectiveReview>,
     pub resolved_decisions: BTreeMap<String, Resolution>,
     pub release_authorization: Option<Authorization>,
+    pub work_log: crate::work::WorkLog,
 }

@@ -62,8 +62,8 @@ synthetic.
    inputs and usage errors return 2.
 5. Save the candidate object from a prior `plan` result and pass it to
    `impact PROJECT PREVIOUS_CANDIDATE` to see changed paths and required replay.
-   This first build invalidates every obligation when the plan or a candidate
-   file changes.
+   See the work-contract section for how the CLI prioritizes replay and
+   identifies the evidence that requires review for the new candidate.
 
 Run the gate with a trusted CLI build, immutable candidate and evidence
 directories, and a trusted directory outside the project. Protect the job
@@ -125,6 +125,45 @@ also emitted for a blocked candidate and uses exit 1 in that case.
 The **Supercritical native evidence** workflow runs the pinned toolkit and
 Kani/CBMC against the reference and mutated interlocks and archives both
 dossiers. Its synthetic approvals are isolated from production release.
-Machine-enforced scheduling by safety claim, protected producer authentication
-for a live project, real target benches and the beginner trial remain follow-up
-work.
+Protected producer authentication for a live project, real target benches
+and the beginner trial remain follow-up work.
+
+### Work contracts and merge replay
+
+Add optional `work.interfaces` to map reviewed interface file paths to
+obligation IDs. Add `work.tasks` with exact candidate paths under `writes`,
+optional `reads`, and optional `interfaces`, `claims` and `depends_on`.
+`schedule PROJECT` returns deterministic waves. File read/write overlap,
+shared interfaces and shared claims keep tasks in separate waves. Interface
+membership is also inferred from declared paths. Both agent hosts use the
+same plan and CLI through the shared skill.
+
+Save the reviewed candidate from `plan PROJECT` before the work begins. On
+the merged checkout, run:
+
+```sh
+supercritical impact PROJECT BEFORE.json
+supercritical replay PROJECT BEFORE.json /path/to/project-ci-runner
+```
+
+The runner is an explicitly selected executable that receives the obligation
+ID and merged candidate digest as arguments and runs from the project root.
+Give it a deterministic dispatch for each obligation, including how to handle
+unavailable checks. The CLI archives stdout, stderr and a content-addressed
+run record under `.supercritical/replays`, and reports a failed runner or
+candidate drift with exit 1. Use an isolated checkout and producer environment.
+The replay records do not carry protected review decisions.
+
+Mapped file changes select a focused replay. Plan changes, unmapped paths and
+projects without interface mappings select all obligations. The
+`release_recheck_obligations` list remains conservative. A change to the
+candidate digest requires current accepted evidence for release even if
+focused replay prioritizes only part of the suite.
+
+Set `work.log` to a tracked JSON file listed in `files`. Its `changes` map
+records summaries, task IDs and optional merged revisions. Its `problems` map
+records summaries, owners, affected obligation IDs and an optional written
+resolution. Keep entries under stable IDs in version control. Unresolved
+problems block the gate. The dossier includes both maps so a resumed session
+can continue from recorded work. A written resolution still requires current
+reviewed evidence to close its obligations.

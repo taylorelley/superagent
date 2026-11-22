@@ -28,6 +28,7 @@ jobs:
           cargo clippy --locked --manifest-path supercritical/Cargo.toml -- -D warnings
           cargo build --locked --manifest-path supercritical/Cargo.toml
           python3 supercritical/tests/interlock.py supercritical/target/debug/supercritical
+          python3 supercritical/tests/work.py supercritical/target/debug/supercritical
 
       - name: OpenCode plugin tests
         run: bash tests/opencode/run-tests.sh

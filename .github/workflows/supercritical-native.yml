@@ -46,6 +46,8 @@ jobs:
         run: |
           cargo +1.99.1 build --locked --manifest-path toolkit/Cargo.toml
           cargo +1.99.1 build --locked --manifest-path supercritical/Cargo.toml
+      - name: Verify semantic scheduling and merge replay
+        run: python3 supercritical/tests/work.py supercritical/target/debug/supercritical
       - name: Verify both interlock candidates
         shell: bash
         run: |

@@ -2,6 +2,7 @@
 
 mod model;
 mod rust_evidence;
+mod work;
 
 use model::*;
 use serde::{de::DeserializeOwned, Serialize};
@@ -168,6 +169,9 @@ fn check_plan(plan: &Plan, candidate: &Candidate) -> Vec<String> {
             ));
         }
     }
+    if let Err(error) = work::schedule(plan) {
+        blockers.push(error.to_string());
+    }
     blockers
 }
 
@@ -230,6 +234,8 @@ fn dossier(root: &Path, trusted: &Path) -> Result<Dossier> {
         return Err("unsupported trust version".into());
     }
     let mut blockers = check_plan(&plan, &candidate);
+    let work_log = work::log(root, &plan, &candidate)?;
+    blockers.extend(work_log.blockers());
     if trust.approved_plan != candidate.plan_sha256 {
         blockers.push("The protected plan approval does not match the current plan".into());
     }
@@ -381,6 +387,7 @@ fn dossier(root: &Path, trusted: &Path) -> Result<Dossier> {
         objectives,
         resolved_decisions,
         release_authorization: trust.release,
+        work_log,
     })
 }
 
@@ -407,6 +414,19 @@ fn stage(root: &Path, bytes: &[u8]) -> Result<serde_json::Value> {
     Ok(serde_json::json!({"record_sha256": digest, "path": path, "status": "submitted"}))
 }
 
+fn stage_replay(root: &Path, bytes: &[u8]) -> Result<String> {
+    let digest = sha(bytes);
+    let directory = root.join(PROJECT).join("replays");
+    fs::create_dir_all(&directory)?;
+    let path = directory.join(&digest);
+    match write_new(&path, bytes) {
+        Ok(()) => (),
+        Err(_) if read(&path).ok().as_deref() == Some(bytes) => (),
+        Err(error) => return Err(error),
+    }
+    Ok(digest)
+}
+
 fn run(args: &[String]) -> Result<u8> {
     match args {
         [command, root] if command == "init" => {
@@ -417,23 +437,31 @@ fn run(args: &[String]) -> Result<u8> {
         }
         [command, root] if command == "plan" || command == "check" => {
             let (plan, candidate) = snapshot(Path::new(root))?;
-            let blockers = check_plan(&plan, &candidate);
+            let mut blockers = check_plan(&plan, &candidate);
+            let work_log = work::log(Path::new(root), &plan, &candidate)?;
+            blockers.extend(work_log.blockers());
             print(&serde_json::json!({
                 "candidate_sha256": sha(&serde_json::to_vec(&candidate)?),
                 "candidate": candidate,
                 "blockers": blockers,
                 "decisions": plan.decisions,
+                "work_log": work_log,
             }))?;
             return Ok(if command == "check" && !blockers.is_empty() { 1 } else { 0 });
         }
+        [command, root] if command == "schedule" => {
+            let (plan, _) = snapshot(Path::new(root))?;
+            print(&work::schedule(&plan)?)?;
+        }
         [command, root, previous] if command == "impact" => {
-            let baseline: Candidate = parse(Path::new(previous))?;
+            let baseline = parse(Path::new(previous))?;
             let (plan, current) = snapshot(Path::new(root))?;
-            let files: BTreeSet<_> = baseline.files.keys().chain(current.files.keys())
-                .filter(|path| baseline.files.get(*path) != current.files.get(*path)).collect();
-            let changed = baseline.plan_sha256 != current.plan_sha256 || !files.is_empty();
-            let replay: Vec<_> = plan.obligations.keys().filter(|_| changed).collect();
-            print(&serde_json::json!({"changed_files": files, "plan_changed": baseline.plan_sha256 != current.plan_sha256, "replay_obligations": replay}))?;
+            print(&work::impact(&plan, &baseline, &current)?)?;
+        }
+        [command, root, previous, runner] if command == "replay" => {
+            let (report, passed) = work::replay(Path::new(root), Path::new(previous), Path::new(runner))?;
+            print(&report)?;
+            return Ok(u8::from(!passed));
         }
         [command, root, record] if command == "import" => {
             let (plan, candidate) = snapshot(Path::new(root))?;
@@ -467,7 +495,7 @@ fn run(args: &[String]) -> Result<u8> {
             }
             return Ok(u8::from(status == "blocked" || (command == "release" && status != "authorized")));
         }
-        _ => return Err("usage: supercritical init|plan|check PROJECT; impact PROJECT PREVIOUS_CANDIDATE; import PROJECT RECORD; ingest-rust PROJECT RECEIPT; gate|release|dossier PROJECT TRUSTED_DIR".into()),
+        _ => return Err("usage: supercritical init|plan|check|schedule PROJECT; replay PROJECT PREVIOUS_CANDIDATE RUNNER; impact PROJECT PREVIOUS_CANDIDATE; import PROJECT RECORD; ingest-rust PROJECT RECEIPT; gate|release|dossier PROJECT TRUSTED_DIR".into()),
     }
     Ok(0)
 }
