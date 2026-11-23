@@ -1,0 +1,102 @@
+# Example only: not wired into this repository's CI.
+#
+# A protected GitHub Actions job for a project's protected evidence repository.
+# When a pull request raised from `supercritical requests` (stage=evidence) is
+# merged, it reads the approval from the GitHub API, checks the approver, and
+# records the acceptance with its forge reference in trust.json.
+#
+# Adapt before use:
+# - Run it only from the protected default branch. Restrict who can edit this
+#   workflow, and protect the branch with required reviewers, CODEOWNERS,
+#   approval of the most recent push and dismissal of stale approvals.
+# - Map GitHub logins and Co-authored-by trailers to the identities your
+#   trust.json uses. This example uses GitHub logins and trailer names as given.
+# - The same pattern applies to plan, decision (issue closed by the owner) and
+#   release items. GitLab, Azure DevOps and Gitea/Forgejo use their own APIs.
+#
+# Review this workflow under the project's own change control before relying
+# on it.
+
+name: Record Supercritical sign-off
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: supercritical-trust
+  cancel-in-progress: false
+
+jobs:
+  record:
+    if: github.event.pull_request.merged && contains(github.event.pull_request.labels.*.name, 'supercritical:evidence')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: main
+      - name: Build the forge reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          URL: ${{ github.event.pull_request.html_url }}
+          OPENED_BY: ${{ github.event.pull_request.user.login }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BODY: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker=$(grep -oE '<!-- supercritical stage=evidence id=[^ ]+ ' <<<"$BODY" | head -1)
+          obligation=${marker#*id=}
+          obligation=${obligation% }
+          [ -n "$obligation" ] || { echo "No Supercritical marker"; exit 1; }
+
+          # The last approval must be on the merged head commit.
+          gh api --paginate "repos/$REPO/pulls/$NUMBER/reviews" \
+            | jq -s 'add | map(select(.state == "APPROVED")) | last' > approval.json
+          approver=$(jq -r '.user.login // empty' approval.json)
+          approved_revision=$(jq -r '.commit_id // empty' approval.json)
+          approved_at=$(jq -r '.submitted_at // empty' approval.json)
+          [ -n "$approver" ] && [ "$approved_revision" = "$HEAD" ] \
+            || { echo "No approval on the merged head commit"; exit 1; }
+
+          # Commit authors and co-authors, as the forge reports them.
+          gh api --paginate "repos/$REPO/pulls/$NUMBER/commits" | jq -s 'add' > commits.json
+          jq -r '.[] | (.author.login // .commit.author.name),
+                 (.commit.message | scan("(?im)^co-authored-by: *([^<]+?) *<")[])' \
+            commits.json | sort -u | jq -R . | jq -s . > authors.json
+
+          # The pull request adds exactly one staged record.
+          record=$(gh api --paginate "repos/$REPO/pulls/$NUMBER/files" \
+            | jq -rs 'add | map(select(.status == "added") | .filename
+                      | select(test("^records/[0-9a-f]{64}\\.json$"))) | .[]')
+          [ "$(wc -l <<<"$record")" = 1 ] || { echo "Expected one added record"; exit 1; }
+          digest=$(basename "$record" .json)
+          [ "$(sha256sum "$record" | cut -d' ' -f1)" = "$digest" ] || { echo "Record digest differs"; exit 1; }
+
+          jq --arg id "$obligation" --arg approver "$approver" --arg digest "$digest" \
+             --arg url "$URL" --arg number "$NUMBER" --arg opened "$OPENED_BY" \
+             --arg at "$approved_at" --arg rev "$HEAD" --slurpfile authors authors.json '
+            if (.reviewers | index($approver)) == null then error("approver is not a reviewer") else . end
+            | if $approver == $opened or ($authors[0] | index($approver)) != null
+              then error("approver opened or authored this pull request") else . end
+            | .acceptances[$id] = {
+                reviewer: $approver, record_sha256: $digest,
+                forge: {system: "github", kind: "pull_request", url: $url, id: $number,
+                        opened_by: $opened, authors: $authors[0], approver: $approver,
+                        approved_at: $at, revision: $rev, approved_revision: $rev}
+              }' trust.json > trust.next
+          mv trust.next trust.json
+      - name: Commit the protected record
+        run: |
+          git config user.name "supercritical-signoff"
+          git config user.email "supercritical-signoff@users.noreply.github.com"
+          git add trust.json
+          git commit -m "Record Supercritical acceptance from #${{ github.event.pull_request.number }}"
+          git push

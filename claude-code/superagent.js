@@ -32,7 +32,12 @@ import { configureLog } from '../core/log.js';
 import { parseConfigText, resolveSettings } from '../core/config.js';
 import { usableMembers, councilInstruction } from '../core/council.js';
 import { renderBootstrap } from '../core/bootstrap.js';
-import { supercriticalContext, supercriticalPlan } from '../core/supercritical.js';
+import {
+  supercriticalContext,
+  supercriticalPlan,
+  supercriticalRefusal,
+  supercriticalRules,
+} from '../core/supercritical.js';
 import { renderRoutingTable, renderConflicts } from '../core/routing.js';
 import * as board from '../core/board.js';
 import { commandsToRegister } from '../core/commands.js';
@@ -683,6 +688,14 @@ export function register(on) {
 
   // The roster's permission rules: refuse what a role may not do.
   on('tool.check', async ($, e, next) => {
+    // Supercritical: no agent, role or not, approves or merges its own work.
+    if (
+      checkCall(supercriticalRules, e.tool, e.input, { cwd: state.cwd }) &&
+      state.cwd &&
+      (await $.fs.exists(`${state.cwd}/${supercriticalPlan}`))
+    ) {
+      return { decision: 'deny', reason: supercriticalRefusal };
+    }
     const agent = e.agentId ? state.agentTypes.get(e.agentId) : null;
     const rules = e.agentId
       ? agent

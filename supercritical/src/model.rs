@@ -18,6 +18,8 @@ pub struct Plan {
     pub objectives: BTreeMap<String, Objective>,
     #[serde(default)]
     pub work: crate::work::Work,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forge: Option<crate::forge::Config>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -80,6 +82,7 @@ pub struct Decision {
 pub struct Trust {
     pub version: u32,
     pub approved_plan: String,
+    pub plan_approval: Option<crate::forge::Ref>,
     pub producers: BTreeMap<String, Vec<Method>>,
     pub reviewers: Vec<String>,
     pub decision_owners: Vec<String>,
@@ -95,6 +98,7 @@ pub struct Resolution {
     pub owner: String,
     pub resolution: String,
     pub source: String,
+    pub forge: Option<crate::forge::Ref>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -102,6 +106,7 @@ pub struct Resolution {
 pub struct Acceptance {
     pub reviewer: String,
     pub record_sha256: String,
+    pub forge: Option<crate::forge::Ref>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -109,6 +114,7 @@ pub struct Acceptance {
 pub struct Authorization {
     pub authority: String,
     pub submission_sha256: String,
+    pub forge: Option<crate::forge::Ref>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -162,8 +168,16 @@ pub struct EvidenceReview {
 }
 
 #[derive(Serialize)]
+pub struct PlanApproval {
+    pub approved_plan: String,
+    pub forge: Option<crate::forge::Ref>,
+    pub blocker: Option<String>,
+}
+
+#[derive(Serialize)]
 pub struct Dossier {
     pub decision: Gate,
+    pub plan_approval: PlanApproval,
     pub candidate: Candidate,
     pub plan: Plan,
     pub evidence: BTreeMap<String, EvidenceReview>,

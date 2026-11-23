@@ -401,6 +401,20 @@ Two mechanisms, selected automatically, never a reason to skip stacking:
 to this skill whenever the branch is part of a stack; a plain,
 non-decomposable branch still gets one PR as before.
 
+## Supercritical sign-offs
+
+In a project with a Supercritical plan (`.supercritical/plan.json`), every
+review and approval goes through the project's forge: GitHub, GitLab, Azure
+DevOps, Gitea/Forgejo, or a configuration management record when there is no
+forge. Agents raise the issues and pull requests that `supercritical requests`
+lists, then stop. People approve them, and protected CI records each approval
+in `trust.json`, citing the forge item. The gate blocks any sign-off that cites
+no approved item, and independent review excludes everyone who produced,
+opened or authored the work. While the plan exists, both hosts deny Superagent's
+agents the forge CLI commands that approve, merge or close, and edits to
+`trust.json` and staged records. See
+[Recording sign-offs from the forge](../supercritical/README.md#recording-sign-offs-from-the-forge).
+
 ## The council
 
 `/council <question>` asks several models the same question in parallel and

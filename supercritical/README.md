@@ -52,8 +52,10 @@ synthetic.
    Put raw artifacts in the trusted directory using their declared relative
    paths. Publish reviewed records as `records/<record_sha256>.json`.
    `trust.json` records plan approval, producer method permissions, reviewer
-   roles, decision resolutions and specific accepted record digests. See the
-   walkthrough for the complete schema.
+   roles, decision resolutions and specific accepted record digests. Each
+   sign-off cites the forge item where it was approved; see
+   [Recording sign-offs from the forge](#recording-sign-offs-from-the-forge).
+   See the walkthrough for the complete schema.
 4. Run `gate PROJECT TRUSTED_DIR`. It returns blockers or a submission digest
    for release review. The release authority records that digest and their
    identity in the protected decision. `release PROJECT TRUSTED_DIR` checks
@@ -73,6 +75,80 @@ directory. The CI or review system must authenticate actual identities and
 establish provenance before it writes protected records. Retain the manifest,
 native outputs and signed or otherwise authenticated approval records under the
 project's configuration management process.
+
+### Recording sign-offs from the forge
+
+Every human sign-off is made in the project's forge and cited in `trust.json`.
+Declare the forge in the plan:
+
+```json
+"forge": {
+  "system": "github",
+  "url_prefix": "https://github.com/example-org/example-project/",
+  "agent_identities": ["example-agent-bot"]
+}
+```
+
+`system` is `github`, `gitlab`, `azure_devops`, `gitea` or `manual`. For a
+forge, `url_prefix` is the https repository URL ending in `/`. For `manual`,
+it is the configuration management record prefix, such as `CM-`. A plan with
+no `forge` has a structural blocker. No agent identity can hold a sign-off.
+
+| Sign-off | Forge item | Approver | `trust.json` |
+| --- | --- | --- | --- |
+| Plan approval | Pull request changing `.supercritical/plan.json` | An authorized reviewer who did not open or author it | `plan_approval` beside `approved_plan` |
+| Decision | Issue resolved by the owner with a written resolution, or a pull request | The decision owner | `decisions.<id>.forge` |
+| Evidence acceptance | Pull request adding the record and raw artifacts to the protected evidence repository | The recorded reviewer | `acceptances.<obligation>.forge` |
+| Release | Pull request carrying the submission digest | The release authority | `release.forge` |
+| Problem report | Issue | The problem owner | `issue` on the work log problem |
+
+Each `forge` value has this form:
+
+```json
+{
+  "system": "github", "kind": "pull_request",
+  "url": "https://github.com/example-org/example-project/pull/42", "id": "42",
+  "opened_by": "example-agent-bot", "authors": ["example-engineer"],
+  "approver": "example-reviewer", "approved_at": "2026-11-23T03:10:00Z",
+  "revision": "<merged head commit>", "approved_revision": "<approved head commit>"
+}
+```
+
+`kind` is `issue`, `pull_request` (also used for merge requests) or `record`
+(only with `manual`). The gate checks that every reference is under the
+prefix, has the right kind for its stage, names the same person as the role
+recorded beside it, and, for a pull request, that the approved head commit is
+the merged one. A push after approval therefore needs fresh approval. The
+forge references are part of the submission digest the release authority
+authorizes. `trust.json` version 1 is rejected: add the references and set
+`version` to 2.
+
+**Independent review.** For an obligation with `independent: true`, the
+approver must not be the evidence producer, an evidence author, the pull
+request opener, or a commit author or co-author. The same applies to plan
+approval. Agent work counts as the work of the person who directed it. That
+person is listed as an author, so they cannot independently review it.
+
+**Requests.** `requests PROJECT [TRUSTED_DIR]` lists the forge items the
+project still needs, with title, body, labels, branch, approver role and
+independence. Without a trusted directory, it lists everything that needs a
+sign-off. With one, it lists only what the gate still blocks on, and offers
+the release item once the gate is clear. Agents raise these items through the
+shared skill and stop. While a project has a plan, both hosts deny Superagent's
+agents the forge commands that approve, merge or close, and edits to
+`trust.json` and staged records. Pattern matching cannot catch every route to
+a forge, so branch protection and the gate are the enforcement.
+
+**Protected CI.** The CLI never contacts the forge. A protected job, triggered
+when a labelled item is merged or closed, reads the approval with the forge
+API. It checks the approver against the roles and, for independent items,
+against the opener and commit authors. Then it writes the reference.
+[`examples/forge-signoff.yml`](examples/forge-signoff.yml) shows the shape for
+GitHub Actions. On GitLab, use merge request approval rules and a protected
+pipeline. On Azure DevOps, use branch policies and a pipeline. On Gitea or
+Forgejo, use Actions. Configure the forge so that its own rules match the
+gate: required approvers, no approval by authors or committers, and approvals
+dismissed on new commits. See `skills/supercritical/forges.md`.
 
 ### Safety Analysis Toolkit
 

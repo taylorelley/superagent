@@ -59,6 +59,7 @@ def exercise(cli, directory):
             },
             "log": ".supercritical/work.json",
         },
+        "forge": {"system": "gitlab", "url_prefix": "https://forge.example/fixture/work/"},
     }
     save(plan_path, plan)
     assert run(cli, "schedule", project)["waves"] == [["decode", "screen"], ["latch"]]
@@ -108,12 +109,16 @@ def exercise(cli, directory):
                                     "obligations": ["INTEGRATION"], "resolution": None}
     save(log, work_log)
     save(trusted / "trust.json", {
-        "version": 1, "approved_plan": hashlib.sha256(plan_path.read_bytes()).hexdigest(),
+        "version": 2, "approved_plan": hashlib.sha256(plan_path.read_bytes()).hexdigest(),
         "producers": {}, "reviewers": [], "decision_owners": [], "release_authorities": [],
         "decisions": {}, "acceptances": {}, "release": None,
     })
     dossier = run(cli, "dossier", project, trusted, status=1)
     assert "PR-1: open problem assigned to integration" in dossier["decision"]["blockers"]
+    assert "PR-1: raise a tracked issue for this problem" in dossier["decision"]["blockers"]
+    requested = run(cli, "requests", project, trusted)
+    problem, = [item for item in requested if item["stage"] == "problem"]
+    assert (problem["id"], problem["kind"], problem["approver"]) == ("problem/PR-1", "issue", "integration")
     assert dossier["work_log"]["problems"]["PR-1"]["summary"] == "Encoding mismatch"
     assert run(cli, "dossier", project, trusted, status=1) == dossier
     # Work log edits are tracked. Use the current candidate as the baseline for
@@ -122,13 +127,15 @@ def exercise(cli, directory):
     (project / "interlock").write_text("fault-low\n")
     assert run(cli, "replay", project, baseline, runner)["run"]["results"]["INTEGRATION"]["passed"]
     work_log["problems"]["PR-1"]["resolution"] = "Encoding aligned in the integration fix"
+    work_log["problems"]["PR-1"]["issue"] = "https://forge.example/fixture/work/-/issues/7"
     save(log, work_log)
     repaired = run(cli, "dossier", project, trusted, status=1)
     assert repaired["work_log"]["problems"]["PR-1"]["resolution"]
     assert not any(s.startswith("PR-1:") for s in repaired["decision"]["blockers"])
+    assert not any(item["stage"] == "problem" for item in run(cli, "requests", project, trusted))
     assert "INTEGRATION: reviewed evidence is missing" in repaired["decision"]["blockers"]
 
 
 with tempfile.TemporaryDirectory(prefix="supercritical-work-") as directory:
     exercise(Path(sys.argv[1]).resolve(), Path(directory))
-    print("Work walkthrough passed: semantic waves, merge replay, persistent problem and review gate")
+    print("Work walkthrough passed: semantic waves, merge replay, tracked problem issue and review gate")

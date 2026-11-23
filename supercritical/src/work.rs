@@ -64,6 +64,8 @@ struct Problem {
     obligations: Names,
     owner: String,
     resolution: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    issue: Option<String>,
 }
 
 #[derive(Default, Serialize)]
@@ -319,6 +321,24 @@ pub fn log(root: &Path, plan: &Plan, candidate: &Candidate) -> Result<WorkLog> {
 }
 
 impl WorkLog {
+    /// A problem's summary, owner and affected obligations.
+    pub fn problem(&self, id: &str) -> Option<(&str, &str, Vec<&str>)> {
+        self.problems.get(id).map(|report| {
+            (
+                report.summary.as_str(),
+                report.owner.as_str(),
+                report.obligations.iter().map(String::as_str).collect(),
+            )
+        })
+    }
+
+    /// Each problem report with its tracked issue, if one is recorded.
+    pub fn problem_issues(&self) -> impl Iterator<Item = (&str, Option<&str>)> + '_ {
+        self.problems
+            .iter()
+            .map(|(id, report)| (id.as_str(), report.issue.as_deref()))
+    }
+
     pub fn blockers(&self) -> impl Iterator<Item = String> + '_ {
         self.problems
             .iter()

@@ -22,7 +22,7 @@ import {
 import { ROSTER } from '../../.opencode/lib/roster.js';
 import { registerAgents, resetPromptCache, parseModelRef } from '../../.opencode/lib/agents.js';
 import { renderRoutingTable, renderConflicts } from '../../.opencode/lib/routing.js';
-import { toRules } from '../../.opencode/lib/permissions.js';
+import { toRules, evaluate } from '../../.opencode/lib/permissions.js';
 import { discoverSkills, registerSkills, watchSkills } from '../../.opencode/lib/skills.js';
 import { defaultAgentConfigured } from '../../.opencode/lib/opencode-config.js';
 import { makeAgentEditor, makeSkillEditor, makeContext } from './fake-v2-context.mjs';
@@ -1008,6 +1008,29 @@ test('plugin: Supercritical activates only after project opt-in and injects once
     await fake.fire('session', 'context', event);
     await fake.fire('session', 'context', event);
     assert.equal(messageText(event.messages[0]).match(/<supercritical>/g)?.length, 1);
+  });
+});
+
+test('plugin: Supercritical denies agent sign-offs once the project opts in', async () => {
+  resetPromptCache();
+  await withPlugin({}, async (fake, dir) => {
+    const decide = (action, resource) =>
+      evaluate(fake.agents().get('superagent').permissions, action, resource);
+    assert.notEqual(decide('shell', 'gh pr merge 1'), 'deny');
+    const planDir = path.join(dir, 'project', '.supercritical');
+    fs.mkdirSync(planDir, { recursive: true });
+    fs.writeFileSync(path.join(planDir, 'plan.json'), '{}');
+    const event = { messages: [userMessage('raise the evidence review')], options: {} };
+    await fake.fire('session', 'context', event);
+    assert.equal(decide('shell', 'git push && gh pr merge 1'), 'deny');
+    assert.equal(decide('shell', 'tea pr approve 3'), 'deny');
+    assert.notEqual(decide('shell', 'gh pr create --title Evidence'), 'deny');
+    assert.equal(decide('edit', '/srv/protected/trust.json'), 'deny');
+    assert.equal(decide('edit', '.supercritical/records/ab.json'), 'deny');
+    assert.equal(
+      evaluate(fake.agents().get('implementer').permissions, 'shell', 'glab mr approve 2'),
+      'deny',
+    );
   });
 });
 

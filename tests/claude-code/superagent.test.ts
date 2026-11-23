@@ -206,6 +206,39 @@ describe('main thread', () => {
     expect(block?.text).toContain('protected evidence');
   });
 
+  test('Supercritical refuses agent sign-offs only when the project has a plan', async ($, on) => {
+    mock.env(on, env);
+    engine(on);
+    mock.store(on);
+    const written: Written = {};
+    files(on, {}, written);
+    on('tool.check', () => ({ decision: 'allow' }));
+    await start($);
+    const bash = (command: string) => $.tool.check({ tool: 'Bash', input: { command } } as any);
+    expect((await bash('gh pr merge 1')).decision).toBe('allow');
+    written['/work/project/.supercritical/plan.json'] = '{}';
+    const merge = await bash('git push && gh pr merge 1 --squash');
+    expect(merge.decision).toBe('deny');
+    expect(merge.reason).toContain('Supercritical');
+    expect((await bash('glab mr approve 4')).decision).toBe('deny');
+    expect((await bash('az repos pr set-vote --id 2 --vote approve')).decision).toBe('deny');
+    expect((await bash('gh pr create --title Evidence --body x')).decision).toBe('allow');
+    const trust = await $.tool.check({
+      tool: 'Write',
+      input: { file_path: '/srv/protected/trust.json', content: '{}' },
+    } as any);
+    expect(trust.decision).toBe('deny');
+    const record = await $.tool.check({
+      tool: 'Edit',
+      input: {
+        file_path: '/work/project/.supercritical/records/ab.json',
+        old_string: 'a',
+        new_string: 'b',
+      },
+    } as any);
+    expect(record.decision).toBe('deny');
+  });
+
   test('the orchestrator role is added to the system prompt', async ($, on) => {
     mock.env(on, env);
     engine(on);

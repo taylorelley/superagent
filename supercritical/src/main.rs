@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
+mod forge;
 mod model;
+mod requests;
 mod rust_evidence;
 mod work;
 
@@ -172,6 +174,7 @@ fn check_plan(plan: &Plan, candidate: &Candidate) -> Vec<String> {
     if let Err(error) = work::schedule(plan) {
         blockers.push(error.to_string());
     }
+    blockers.extend(forge::config_blocker(plan.forge.as_ref()));
     blockers
 }
 
@@ -229,15 +232,47 @@ fn dossier(root: &Path, trusted: &Path) -> Result<Dossier> {
     }
     let (plan, candidate) = snapshot(root)?;
     let candidate_sha256 = sha(&serde_json::to_vec(&candidate)?);
-    let trust: Trust = parse(&safe_path(trusted, "trust.json")?)?;
-    if trust.version != 1 {
+    let trust_path = safe_path(trusted, "trust.json")?;
+    let version = serde_json::from_slice::<serde_json::Value>(&read(&trust_path)?)?
+        .get("version")
+        .and_then(serde_json::Value::as_u64);
+    if version == Some(1) {
+        return Err("trust.json version 1 has no forge references: migrate to version 2 and cite the approved issue or pull request for each sign-off".into());
+    }
+    let trust: Trust = parse(&trust_path)?;
+    if trust.version != 2 {
         return Err("unsupported trust version".into());
     }
+    let forge_config = plan.forge.as_ref();
     let mut blockers = check_plan(&plan, &candidate);
     let work_log = work::log(root, &plan, &candidate)?;
     blockers.extend(work_log.blockers());
-    if trust.approved_plan != candidate.plan_sha256 {
-        blockers.push("The protected plan approval does not match the current plan".into());
+    let plan_blocker = if trust.approved_plan != candidate.plan_sha256 {
+        Some("The protected plan approval does not match the current plan".to_string())
+    } else {
+        let approver = trust
+            .plan_approval
+            .as_ref()
+            .map_or("", |reference| reference.approver.as_str());
+        forge::check(
+            trust.plan_approval.as_ref(),
+            &forge::Stage {
+                name: "plan",
+                kinds: forge::CHANGE,
+                approver,
+                independent_of: Some(BTreeSet::new()),
+            },
+            forge_config,
+        )
+        .err()
+        .or_else(|| {
+            (!trust.reviewers.iter().any(|reviewer| reviewer == approver))
+                .then(|| "plan: the plan approver is not an authorized reviewer".to_string())
+        })
+    };
+    blockers.extend(plan_blocker.clone());
+    for (id, issue) in work_log.problem_issues() {
+        blockers.extend(forge::issue_blocker(forge_config, id, issue));
     }
     let mut resolutions = BTreeMap::new();
     let mut pending_decisions = BTreeMap::new();
@@ -248,7 +283,23 @@ fn dossier(root: &Path, trusted: &Path) -> Result<Dossier> {
                 && !resolution.resolution.trim().is_empty()
                 && !resolution.source.trim().is_empty()
         });
-        if accepted {
+        let forge_blocker = trust.decisions.get(id).and_then(|resolution| {
+            forge::check(
+                resolution.forge.as_ref(),
+                &forge::Stage {
+                    name: id,
+                    kinds: forge::DECISION,
+                    approver: &decision.owner,
+                    independent_of: None,
+                },
+                forge_config,
+            )
+            .err()
+        });
+        if accepted && forge_blocker.is_some() {
+            blockers.extend(forge_blocker);
+            pending_decisions.insert(id.clone(), decision.clone());
+        } else if accepted {
             let resolution = &trust.decisions[id];
             resolutions.insert(
                 id.clone(),
@@ -300,6 +351,18 @@ fn dossier(root: &Path, trusted: &Path) -> Result<Dossier> {
             {
                 return Err("independent review requires a different reviewer".into());
             }
+            let mut excluded: BTreeSet<&str> = item.authors.iter().map(String::as_str).collect();
+            excluded.insert(&item.producer);
+            forge::check(
+                approval.forge.as_ref(),
+                &forge::Stage {
+                    name: "acceptance",
+                    kinds: forge::CHANGE,
+                    approver: &approval.reviewer,
+                    independent_of: obligation.independent.then_some(excluded),
+                },
+                forge_config,
+            )?;
             Ok([&approval.reviewer, digest])
         })();
         match result {
@@ -313,6 +376,17 @@ fn dossier(root: &Path, trusted: &Path) -> Result<Dossier> {
         }
         evidence.insert(id.clone(), row);
     }
+    let mut signoffs = BTreeMap::new();
+    signoffs.insert("plan".to_string(), trust.plan_approval.as_ref());
+    for id in resolutions.keys() {
+        signoffs.insert(format!("decision:{id}"), trust.decisions[id].forge.as_ref());
+    }
+    for id in accepted.keys() {
+        signoffs.insert(
+            format!("acceptance:{id}"),
+            trust.acceptances[*id].forge.as_ref(),
+        );
+    }
     let submission_sha256 = blockers
         .is_empty()
         .then(|| {
@@ -320,6 +394,7 @@ fn dossier(root: &Path, trusted: &Path) -> Result<Dossier> {
                 &candidate_sha256,
                 accepted,
                 &resolutions,
+                &signoffs,
                 &trust.producers,
                 &trust.reviewers,
                 &trust.decision_owners,
@@ -334,12 +409,16 @@ fn dossier(root: &Path, trusted: &Path) -> Result<Dossier> {
             if trust.release.as_ref().is_some_and(|release| {
                 trust.release_authorities.contains(&release.authority)
                     && &release.submission_sha256 == digest
+                    && release_blocker(release, forge_config).is_none()
             }) =>
         {
             "authorized"
         }
         Some(_) => "ready_for_release_review",
     };
+    if let (Some(_), Some(release)) = (&submission_sha256, &trust.release) {
+        blockers.extend(release_blocker(release, forge_config));
+    }
     let resolved_ids: BTreeSet<_> = resolutions.into_keys().collect();
     let resolved_decisions = trust
         .decisions
@@ -373,6 +452,11 @@ fn dossier(root: &Path, trusted: &Path) -> Result<Dossier> {
         })
         .collect();
     Ok(Dossier {
+        plan_approval: PlanApproval {
+            approved_plan: trust.approved_plan,
+            forge: trust.plan_approval,
+            blocker: plan_blocker,
+        },
         decision: Gate {
             candidate_sha256,
             submission_sha256,
@@ -389,6 +473,20 @@ fn dossier(root: &Path, trusted: &Path) -> Result<Dossier> {
         release_authorization: trust.release,
         work_log,
     })
+}
+
+fn release_blocker(release: &Authorization, config: Option<&forge::Config>) -> Option<String> {
+    forge::check(
+        release.forge.as_ref(),
+        &forge::Stage {
+            name: "release",
+            kinds: forge::CHANGE,
+            approver: &release.authority,
+            independent_of: None,
+        },
+        config,
+    )
+    .err()
 }
 
 fn write_new(path: &Path, contents: &[u8]) -> Result<()> {
@@ -477,6 +575,12 @@ fn run(args: &[String]) -> Result<u8> {
             }
             print(&stage(Path::new(root), &bytes)?)?;
         }
+        [command, root] if command == "requests" => {
+            print(&requests::list(Path::new(root), None)?)?;
+        }
+        [command, root, trusted] if command == "requests" => {
+            print(&requests::list(Path::new(root), Some(Path::new(trusted)))?)?;
+        }
         [command, root, receipt] if command == "ingest-rust" => {
             let (output, all_passed) = rust_evidence::ingest(Path::new(root), receipt)?;
             print(&output)?;
@@ -495,7 +599,7 @@ fn run(args: &[String]) -> Result<u8> {
             }
             return Ok(u8::from(status == "blocked" || (command == "release" && status != "authorized")));
         }
-        _ => return Err("usage: supercritical init|plan|check|schedule PROJECT; replay PROJECT PREVIOUS_CANDIDATE RUNNER; impact PROJECT PREVIOUS_CANDIDATE; import PROJECT RECORD; ingest-rust PROJECT RECEIPT; gate|release|dossier PROJECT TRUSTED_DIR".into()),
+        _ => return Err("usage: supercritical init|plan|check|schedule PROJECT; replay PROJECT PREVIOUS_CANDIDATE RUNNER; impact PROJECT PREVIOUS_CANDIDATE; requests PROJECT [TRUSTED_DIR]; import PROJECT RECORD; ingest-rust PROJECT RECEIPT; gate|release|dossier PROJECT TRUSTED_DIR".into()),
     }
     Ok(0)
 }

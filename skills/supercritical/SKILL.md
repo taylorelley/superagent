@@ -27,6 +27,32 @@ Example: If the fault input goes silent, can the interface distinguish sensor
 power loss from fault clearance? Request the interface specification and the
 observed behavior on the intended equipment.
 
+## Raise reviews and approvals on the forge
+
+Every sign-off happens in the project's forge: plan approval, each decision,
+each evidence acceptance and release authorization. Problem reports are
+tracked issues. Declare the forge under `forge` in the plan, with
+`system`, `url_prefix` and the `agent_identities` that agents and automation
+use.
+
+At each stage run `requests PROJECT` (or `requests PROJECT TRUSTED_DIR` once
+protected evidence exists). Raise each returned item exactly as given, with
+its title, body, labels and branch, using [forges.md](forges.md) to detect the
+forge and its CLI. Assign or request the named approver or role. Record a
+problem's issue URL as `issue` in the work log. Then stop and report the links.
+The people who hold the role approve on the forge. Protected CI verifies the
+approval and records it in `trust.json`.
+
+Never approve, review, vote on, merge or close these items yourself. Never
+write `trust.json` or staged records. The hosts refuse those commands while
+Supercritical is on, but the rule holds for any route to the forge.
+
+An item labelled `supercritical:independent` needs an approver who did not
+produce, open or author any part of the work. Work you do counts as the work
+of the person who directed you: list them as an author on records and commits
+(a `Co-Authored-By` trailer), so they cannot be the independent reviewer. A
+subagent review is task review only, never independent review.
+
 ## Build and verify
 
 Use Superagent's planning, worktree and review workflow. Each task brief names

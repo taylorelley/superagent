@@ -144,6 +144,11 @@ The roster's permission rules are the same rules OpenCode uses, and
   agent's role; an `ask` asks you.
 - The orchestrator may write only under `.superagent/`, as on OpenCode. Its
   shell and read access are unchanged.
+- In a project with a Supercritical plan, every agent, the main conversation
+  included, is refused the forge commands that approve, review, merge or
+  close (`gh`, `glab`, `az repos`/`az boards`, `tea`), and edits to
+  `trust.json` and `.supercritical/records/`. See
+  [Supercritical sign-offs](superagent.md#supercritical-sign-offs).
 - An `allow` rule never approves a call on your behalf: Claude Code's own
   permission settings still decide those. Installing Superagent never widens
   what runs without asking.
@@ -230,6 +235,7 @@ extension. `{"tui": {"enabled": false}}` turns it off.
 | Bootstrap in subagents | injected into every session; subagents are told to skip it | the main conversation only; specialists carry their own contract |
 | A skill added while running | picked up by the watcher | picked up by `/reload-plugins` or a new session |
 | A command switched off by `/preset` | unregistered | hidden from the command list, and says it is off if typed |
+| Supercritical sign-off denials | added to Superagent's roster and council agents, and refreshed on the next request after the plan appears; Superagent leaves OpenCode's own agents (`build`, `plan`) unchanged, so use the roster's orchestrator | checked on every tool call by every agent, the main conversation included, from the moment the plan exists |
 
 ## What degrades, and how
 

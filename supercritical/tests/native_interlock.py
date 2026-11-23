@@ -7,6 +7,18 @@ import subprocess
 from pathlib import Path
 
 
+FORGE = "https://forge.example/fixture/native-interlock/"
+
+
+def forge_ref(number, approver):
+    """A pull request sign-off as protected CI would record it after checking the forge."""
+    return {
+        "system": "github", "kind": "pull_request", "url": f"{FORGE}pull/{number}", "id": str(number),
+        "opened_by": "fixture-agent", "authors": ["native-interlock-fixture"], "approver": approver,
+        "approved_at": "2026-11-23T00:00:00Z", "revision": "c" * 40, "approved_revision": "c" * 40,
+    }
+
+
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -63,6 +75,7 @@ def replay(cli, safety, output, broken):
         "files": ["lib.rs", "safety.yaml", "rust-verification.json"],
         "decisions": {}, "requirements": requirements, "obligations": obligations, "rust_checks": checks,
         "objectives": {"RESET": {"description": "Verify and validate reset behavior", "obligations": sorted(obligations)}},
+        "forge": {"system": "github", "url_prefix": FORGE, "agent_identities": ["fixture-agent"]},
     })
     candidate = json.loads(run([cli, "check", project]))["candidate_sha256"]
 
@@ -128,7 +141,7 @@ def replay(cli, safety, output, broken):
     assert staged["REQ-CLEAR-PROOF"]["outcome"] == ("incomplete" if broken else "pass")
 
     trust = {
-        "version": 1, "approved_plan": sha(plan),
+        "version": 2, "approved_plan": sha(plan), "plan_approval": forge_ref(1, "fixture-reviewer"),
         "producers": {"native-interlock-fixture": ["test", "proof"]},
         "reviewers": ["fixture-reviewer"], "decision_owners": [],
         "release_authorities": [], "decisions": {}, "acceptances": {}, "release": None,
@@ -143,7 +156,10 @@ def replay(cli, safety, output, broken):
         destination = trusted / "records" / record.name
         destination.parent.mkdir(exist_ok=True)
         shutil.copyfile(record, destination)
-        trust["acceptances"][claim] = {"reviewer": "fixture-reviewer", "record_sha256": item["record_sha256"]}
+        trust["acceptances"][claim] = {
+            "reviewer": "fixture-reviewer", "record_sha256": item["record_sha256"],
+            "forge": forge_ref(10 + len(trust["acceptances"]), "fixture-reviewer"),
+        }
     save(trusted / "trust.json", trust)
     result = run([cli, "dossier", project, trusted], 1)
     (output / "dossier.json").write_bytes(result)

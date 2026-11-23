@@ -15,9 +15,14 @@
 import path from 'path';
 import fs from 'fs';
 import { skillsDir as defaultSkillsDir } from './paths.js';
+import { guard } from './log.js';
 import { injectBootstrap, renderBootstrap } from '../../core/bootstrap.js';
 
-import { supercriticalContext, supercriticalPlan } from '../../core/supercritical.js';
+import {
+  supercriticalContext,
+  supercriticalPlan,
+  supercriticalRules,
+} from '../../core/supercritical.js';
 
 export { BOOTSTRAP_MARKER, withContent, injectBootstrap } from '../../core/bootstrap.js';
 
@@ -57,11 +62,37 @@ export const getBootstrapContent = (skillsDir = defaultSkillsDir, extra = '') =>
   return cache;
 };
 
-export const injectProjectBootstrap = (messages, directory, routing, settings) => {
+export const injectProjectBootstrap = (messages, supercritical, routing, settings) => {
   if (settings.bootstrap?.enabled !== false) {
     injectBootstrap(messages, getBootstrapContent(defaultSkillsDir, routing));
   }
-  if (fs.existsSync(path.join(directory, supercriticalPlan))) {
+  if (supercritical.refresh()) {
     injectBootstrap(messages, supercriticalContext, '<supercritical>');
   }
+};
+
+/**
+ * Supercritical's opt-in. The agent transform must stay I/O free, so it reads
+ * the state last seen here: `guard` appends the sign-off denials to each agent
+ * the transform registered while the project has a plan. `refresh`, called by
+ * the context hook, looks again and reloads the agents when that changed.
+ */
+export const supercriticalToggle = (directory, reload) => {
+  const present = () => fs.existsSync(path.join(directory, supercriticalPlan));
+  let enabled = present();
+  return {
+    guard: (editor, agents) => {
+      if (!enabled) return;
+      for (const { name } of agents) {
+        editor.update(name, (agent) => agent.permissions.push(...supercriticalRules));
+      }
+    },
+    refresh: () => {
+      if (present() !== enabled) {
+        enabled = !enabled;
+        void guard('supercritical reload', reload);
+      }
+      return enabled;
+    },
+  };
 };

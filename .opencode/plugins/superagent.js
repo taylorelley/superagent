@@ -18,7 +18,7 @@
  */
 
 import { skillsDir, resolveConfigDir } from '../lib/paths.js';
-import { injectProjectBootstrap } from '../lib/bootstrap.js';
+import { injectProjectBootstrap, supercriticalToggle } from '../lib/bootstrap.js';
 import { loadConfig } from '../lib/config-schema.js';
 import { registerAgents, preloadPrompts, warnConflicts } from '../lib/agents.js';
 import { discoverSkills, registerSkills, watchSkills } from '../lib/skills.js';
@@ -43,6 +43,7 @@ const setup = async (ctx) => {
   let skills = discoverSkills(skillsDir);
   preloadPrompts();
   const userChoseDefault = defaultAgentConfigured({ configDir, projectDir: directory });
+  const supercritical = supercriticalToggle(directory, () => ctx.agent.reload());
 
   // Written by the agent transform on each replay; read by the hooks.
   const state = { routingTable: '', councillors: [], temperatures: {} };
@@ -78,6 +79,7 @@ const setup = async (ctx) => {
     guardSync('agent transform', () => {
       const agents = registerAgents(editor, settings, { defaultAgentConfigured: userChoseDefault });
       const council = registerCouncillors(editor, settings, members);
+      supercritical.guard(editor, [...agents.registered, ...council.registered]);
       const commandConflicts = commandsToRegister(settings, existing).conflicts;
       const conflicts = [...agents.conflicts, ...council.conflicts, ...commandConflicts];
       warnConflicts(conflicts);
@@ -134,7 +136,7 @@ const setup = async (ctx) => {
       if (typeof temperature === 'number' && event.options?.temperature === undefined) {
         event.options.temperature = temperature;
       }
-      injectProjectBootstrap(event.messages, directory, state.routingTable, settings);
+      injectProjectBootstrap(event.messages, supercritical, state.routingTable, settings);
       board.injectBoard(event.messages, event.sessionID, settings);
     }),
   );
